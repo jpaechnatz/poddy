@@ -38,6 +38,7 @@ from podcast_processor.chapter_writer import (
     recalculate_chapter_times,
     write_adjusted_chapters,
 )
+from podcast_processor.id3_metadata import copy_id3_metadata
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
 from podcast_processor.processing_status_manager import ProcessingStatusManager
 from podcast_processor.prompt import (
@@ -884,6 +885,11 @@ class PodcastProcessor:
         """
         Finalize processing: update database and mark job complete.
         """
+        unprocessed_audio_path = post.unprocessed_audio_path
+        if unprocessed_audio_path and os.path.exists(str(unprocessed_audio_path)):
+            # Restore cover art, comments and links that ffmpeg drops.
+            copy_id3_metadata(str(unprocessed_audio_path), processed_audio_path)
+
         # Update the database with the processed audio path
         self._remove_unprocessed_audio(post)
         update_data: dict[str, Any] = {

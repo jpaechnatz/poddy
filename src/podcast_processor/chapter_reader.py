@@ -1,7 +1,8 @@
 """Read chapter metadata from MP3 files using ID3 CHAP frames."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from mutagen.id3 import CHAP, ID3
 from mutagen.mp3 import MP3
@@ -17,6 +18,9 @@ class Chapter:
     title: str
     start_time_ms: int
     end_time_ms: int
+    # ID3 sub-frames besides the title (chapter image APIC, link WXXX, TIT3).
+    # Kept so rewritten chapters still carry their artwork and links.
+    sub_frames: list[Any] = field(default_factory=list, compare=False, repr=False)
 
 
 def read_chapters(audio_path: str) -> list[Chapter]:
@@ -46,13 +50,16 @@ def read_chapters(audio_path: str) -> list[Chapter]:
             start_time_ms = frame.start_time
             end_time_ms = frame.end_time
 
-            # Extract title from sub-frames (TIT2)
+            # Extract title from sub-frames (TIT2); keep everything else.
             title = ""
+            extra_sub_frames: list[Any] = []
             if frame.sub_frames:
                 for sub_frame in frame.sub_frames.values():
                     if sub_frame.FrameID == "TIT2":
-                        title = str(sub_frame.text[0]) if sub_frame.text else ""
-                        break
+                        if not title and sub_frame.text:
+                            title = str(sub_frame.text[0])
+                        continue
+                    extra_sub_frames.append(sub_frame)
 
             if not title:
                 title = element_id
@@ -63,6 +70,7 @@ def read_chapters(audio_path: str) -> list[Chapter]:
                     title=title,
                     start_time_ms=start_time_ms,
                     end_time_ms=end_time_ms,
+                    sub_frames=extra_sub_frames,
                 )
             )
 

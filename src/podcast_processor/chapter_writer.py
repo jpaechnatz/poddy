@@ -65,6 +65,7 @@ def recalculate_chapter_times(
                 title=chapter.title,
                 start_time_ms=new_start_ms,
                 end_time_ms=new_end_ms,
+                sub_frames=chapter.sub_frames,
             )
         )
 
@@ -174,7 +175,7 @@ def write_chapters(
                 end_time=chapter.end_time_ms,
                 start_offset=0xFFFFFFFF,  # Not used
                 end_offset=0xFFFFFFFF,  # Not used
-                sub_frames=[tit2],
+                sub_frames=[tit2, *chapter.sub_frames],
             )
             tags.add(chap)
 
