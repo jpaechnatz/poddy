@@ -7,6 +7,7 @@ export interface WhisperLanguageOption {
 }
 
 export const WHISPER_LANGUAGES: ReadonlyArray<WhisperLanguageOption> = [
+  { code: 'auto', name: 'Auto-detect (mixed-language episodes)' },
   { code: 'ar', name: 'Arabic' },
   { code: 'zh', name: 'Chinese' },
   { code: 'da', name: 'Danish' },

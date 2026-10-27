@@ -761,6 +761,8 @@ def feed_item(
         )
         feed = getattr(post, "feed", None)
         transcript_language = getattr(feed, "language", None) if feed else None
+        if transcript_language == "auto":
+            transcript_language = None
 
     item = ItunesRSSItem(
         title=title,

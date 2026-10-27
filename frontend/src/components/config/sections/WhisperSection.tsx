@@ -147,6 +147,7 @@ export default function WhisperSection() {
                 type="text"
                 value={(pending?.whisper as { language?: string })?.language || 'en'}
                 onChange={(e) => setField(['whisper', 'language'], e.target.value)}
+                placeholder="en, de, … or auto"
               />
             </Field>
             <Field label="Timeout (sec)" envMeta={getEnvHint('whisper.timeout_sec')}>
@@ -204,6 +205,7 @@ export default function WhisperSection() {
                 type="text"
                 value={(pending?.whisper as { language?: string })?.language || 'en'}
                 onChange={(e) => setField(['whisper', 'language'], e.target.value)}
+                placeholder="en, de, … or auto"
               />
             </Field>
             <Field label="Max Retries" envMeta={getEnvHint('whisper.max_retries')}>
