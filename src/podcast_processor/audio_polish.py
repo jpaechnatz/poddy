@@ -125,17 +125,6 @@ def polish_audio(path: str, options: PolishOptions) -> list[tuple[float, float]]
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-        if chapters:
-            write_adjusted_chapters(path, chapters, windows)
-
-        logger.info(
-            "Polished %s: removed %d silences (%.1fs), loudness normalized=%s",
-            path,
-            len(windows),
-            sum(end - start for start, end in windows),
-            loudnorm_args is not None,
-        )
-        return windows
     except Exception as e:  # noqa: BLE001
         stderr = getattr(e, "stderr", b"") or b""
         logger.warning(
@@ -145,6 +134,23 @@ def polish_audio(path: str, options: PolishOptions) -> list[tuple[float, float]]
             stderr.decode("utf-8", errors="replace")[-500:],
         )
         return []
+
+    # The file is polished now: callers must learn the removed windows even if
+    # rewriting chapters fails, or transcript and chapter data would drift.
+    if chapters:
+        try:
+            write_adjusted_chapters(path, chapters, windows)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not rewrite chapters after polishing %s: %s", path, e)
+
+    logger.info(
+        "Polished %s: removed %d silences (%.1fs), loudness normalized=%s",
+        path,
+        len(windows),
+        sum(end - start for start, end in windows),
+        loudnorm_args is not None,
+    )
+    return windows
 
 
 def _apply_cuts(stream: Any, windows: list[tuple[float, float]]) -> Any:

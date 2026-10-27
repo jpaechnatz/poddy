@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from app.models import Post, ProcessingJob
 from podcast_processor.audio import clip_segments_with_fade
+from podcast_processor.audio_processor import AudioCutResult
 from podcast_processor.chapter_reader import Chapter, read_chapters
 from podcast_processor.chapter_writer import write_adjusted_chapters, write_chapters
 from podcast_processor.podcast_processor import PodcastProcessor
@@ -68,7 +69,9 @@ def _llm_processor(fallback_enabled: bool) -> PodcastProcessor:
         SimpleNamespace(sequence_num=0, start_time=0.0, end_time=5.0, text="hi")
     ]
     processor.audio_processor = MagicMock()
-    processor.audio_processor.process_audio.return_value = [(10_000, 20_000)]
+    processor.audio_processor.process_audio.return_value = AudioCutResult(
+        [(10_000, 20_000)], [(10_000, 20_000)]
+    )
     processor.status_manager = MagicMock()
     processor._classify_ad_segments = MagicMock()
     processor._finalize_processing = MagicMock()
@@ -108,6 +111,7 @@ def test_llm_path_rewrites_embedded_chapters_without_fallback_tagging() -> None:
         audio_path="/tmp/out.mp3",
         chapters_to_keep=embedded,
         removed_segments=[(10.0, 20.0)],
+        drop_windows=[(10.0, 20.0)],
     )
     # Without fallback tagging no Podly chapter list is added to the feed.
     assert finalize_mock.call_args.kwargs["chapter_data"] is None
@@ -144,5 +148,26 @@ def test_chapters_follow_cut_audio_with_fades(tmp_path: Path) -> None:
     assert [(c.title, c.start_time_ms) for c in chapters] == [
         ("Intro", 0),
         ("Werbung", 10_000),
+        ("Thema", 14_000),
+    ]
+
+
+def test_llm_path_drops_ad_chapter_kept_only_as_fade_stub(tmp_path: Path) -> None:
+    source = _mp3_with_chapters(tmp_path)
+    out = tmp_path / "out.mp3"
+    processor = _llm_processor(fallback_enabled=False)
+    ad_ms = [(10_000, 20_000)]
+    removed_ms = clip_segments_with_fade(ad_ms, 2_000, str(source), str(out))
+    audio_processor = cast(MagicMock, processor.audio_processor)
+    audio_processor.process_audio.return_value = AudioCutResult(ad_ms, removed_ms)
+    post = _post()
+    post.unprocessed_audio_path = str(source)
+    job = ProcessingJob(id="job", post_guid="g", status="running")
+
+    processor._perform_llm_based_processing(post, job, str(out))
+
+    # "Werbung" only survives as 4 s of faded ad audio, so it is dropped.
+    assert [(c.title, c.start_time_ms) for c in read_chapters(str(out))] == [
+        ("Intro", 0),
         ("Thema", 14_000),
     ]

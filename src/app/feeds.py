@@ -933,17 +933,22 @@ def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post
 
     all_posts = []
     for feed_id in feed_ids:
-        # Fetch last N processed posts for this feed
-        posts = (
-            Post.query.filter(
-                Post.feed_id == feed_id,
-                Post.whitelisted.is_(True),
-                Post.processed_audio_path.isnot(None),
-            )
-            .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-            .limit(limit_per_feed)
-            .all()
-        )
+        # Fetch last N processed posts for this feed, skipping excluded titles
+        # before the limit so a feed still contributes N episodes.
+        feed = db.session.get(Feed, feed_id)
+        query = Post.query.filter(
+            Post.feed_id == feed_id,
+            Post.whitelisted.is_(True),
+            Post.processed_audio_path.isnot(None),
+        ).order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+        if feed is not None and getattr(feed, "episode_title_exclude_strings", None):
+            posts = [
+                post
+                for post in query.limit(limit_per_feed * 20).all()
+                if not is_title_excluded(feed, post.title)
+            ][:limit_per_feed]
+        else:
+            posts = query.limit(limit_per_feed).all()
         all_posts.extend(posts)
 
     # Sort all posts by release date descending

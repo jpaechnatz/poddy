@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from mutagen.id3 import APIC, COMM, ID3, TIT2, TLEN, WXXX
+from mutagen.id3 import APIC, COMM, ID3, RVA2, TIT2, TLEN, TXXX, WXXX
 
 from app.models import Post, ProcessingJob
 from podcast_processor.audio import clip_segments_with_fade
@@ -117,4 +117,27 @@ def test_finalize_copies_metadata_from_source(tmp_path: Path) -> None:
         writer.update.return_value = SimpleNamespace(success=True)
         processor._finalize_processing(post, ProcessingJob(), "/out/ep.mp3")
 
-    copy_mock.assert_called_once_with(str(source), "/out/ep.mp3")
+    copy_mock.assert_called_once_with(
+        str(source), "/out/ep.mp3", skip_loudness_frames=False
+    )
+
+
+def test_loudness_frames_are_skipped_after_normalization(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    tags = ID3(str(source))
+    tags.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=["-6.2 dB"]))
+    tags.add(RVA2(desc="track", channel=1, gain=-6.2, peak=0.9))
+    tags.save()
+    plain, normalized = tmp_path / "plain.mp3", tmp_path / "normalized.mp3"
+    for dest in (plain, normalized):
+        shutil.copyfile(DATA / "count_0_99.mp3", dest)
+        ID3(str(dest)).delete()
+
+    copy_id3_metadata(str(source), str(plain))
+    copy_id3_metadata(str(source), str(normalized), skip_loudness_frames=True)
+
+    assert ID3(str(plain)).getall("RVA2")
+    assert ID3(str(plain)).getall("TXXX:REPLAYGAIN_TRACK_GAIN")
+    assert not ID3(str(normalized)).getall("RVA2")
+    assert not ID3(str(normalized)).getall("TXXX:REPLAYGAIN_TRACK_GAIN")
+    assert ID3(str(normalized)).getall("APIC")

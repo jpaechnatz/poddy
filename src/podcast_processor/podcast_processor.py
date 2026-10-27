@@ -472,12 +472,14 @@ class PodcastProcessor:
         self.status_manager.update_job_status(
             job, "running", 4, "Processing audio", 90.0
         )
-        removed_segments_ms = self.audio_processor.process_audio(
-            post, processed_audio_path
-        )
+        cut = self.audio_processor.process_audio(post, processed_audio_path)
+        # Ad windows decide what counts as ad content; removed windows (narrower,
+        # fades keep the ad edges) decide how far later timestamps move.
+        ad_windows_ms = cut.ad_windows_ms
+        ad_windows_sec = [(s / 1000.0, e / 1000.0) for s, e in ad_windows_ms]
         removed_segments_sec = [
             (start_ms / 1000.0, end_ms / 1000.0)
-            for start_ms, end_ms in removed_segments_ms
+            for start_ms, end_ms in cut.removed_windows_ms
         ]
 
         chapters_for_output = []
@@ -499,7 +501,7 @@ class PodcastProcessor:
             if chapter_source == "transcript" and chapters_for_output:
                 transcript_segments_for_chapters = (
                     self._filter_transcript_segments_for_chapters(
-                        transcript_segments, removed_segments_ms
+                        transcript_segments, ad_windows_ms
                     )
                 )
                 if not transcript_segments_for_chapters:
@@ -531,6 +533,7 @@ class PodcastProcessor:
                     audio_path=processed_audio_path,
                     chapters_to_keep=embedded_chapters,
                     removed_segments=removed_segments_sec,
+                    drop_windows=ad_windows_sec,
                 )
 
         chapter_data_json: str | None = None
@@ -539,9 +542,10 @@ class PodcastProcessor:
                 audio_path=processed_audio_path,
                 chapters_to_keep=chapters_for_output,
                 removed_segments=removed_segments_sec,
+                drop_windows=ad_windows_sec,
             )
             adjusted_chapters = recalculate_chapter_times(
-                chapters_for_output, removed_segments_sec
+                chapters_for_output, removed_segments_sec, ad_windows_sec
             )
             chapter_data_json = json.dumps(
                 {
@@ -929,7 +933,11 @@ class PodcastProcessor:
         unprocessed_audio_path = post.unprocessed_audio_path
         if unprocessed_audio_path and os.path.exists(str(unprocessed_audio_path)):
             # Restore cover art, comments and links that ffmpeg drops.
-            copy_id3_metadata(str(unprocessed_audio_path), processed_audio_path)
+            copy_id3_metadata(
+                str(unprocessed_audio_path),
+                processed_audio_path,
+                skip_loudness_frames=polish_options.normalize_loudness,
+            )
 
         # Update the database with the processed audio path
         self._remove_unprocessed_audio(post)

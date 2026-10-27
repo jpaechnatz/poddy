@@ -196,5 +196,6 @@ def test_process_audio(
             assert mock_clip.call_args.kwargs["ad_segments_ms"] == [(5000, 30000)]
             # process_audio reports the audio the cut really removed (fades keep
             # the ad edges), which is what timestamp consumers need.
-            assert removed_segments == [(8000, 27000)]
+            assert removed_segments.removed_windows_ms == [(8000, 27000)]
+            assert removed_segments.ad_windows_ms == [(5000, 30000)]
             mock_clip.assert_called_once()

@@ -232,3 +232,16 @@ def test_settings_accept_polish_flags(app: Any) -> None:
     assert ok.get_json()["trim_silence"] is True
     assert ok.get_json()["normalize_loudness"] is False
     assert bad.status_code == 400
+
+
+def test_windows_are_reported_even_if_chapter_rewrite_fails(tmp_path: Path) -> None:
+    path = _tone_silence_tone(tmp_path)
+
+    with mock.patch(
+        "podcast_processor.audio_polish.write_adjusted_chapters",
+        side_effect=RuntimeError("mutagen failed"),
+    ):
+        windows = polish_audio(str(path), PolishOptions(trim_silence=True))
+
+    # The audio was already trimmed, so callers must still shift their data.
+    assert len(windows) == 1

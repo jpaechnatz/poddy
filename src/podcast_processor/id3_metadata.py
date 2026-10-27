@@ -22,7 +22,20 @@ _STALE_TIMING_FRAME_IDS = frozenset(
 _NEVER_COPIED_FRAME_IDS = _STALE_TIMING_FRAME_IDS | {"CHAP", "CTOC"}
 
 
-def copy_id3_metadata(source_path: str, dest_path: str) -> int:
+# Volume adjustment frames; stale once Podly has normalized the loudness.
+_LOUDNESS_FRAME_IDS = frozenset({"RVA2", "RVAD", "EQU2"})
+
+
+def _is_loudness_frame(key: str, frame: object) -> bool:
+    frame_id = getattr(frame, "FrameID", "")
+    if frame_id in _LOUDNESS_FRAME_IDS:
+        return True
+    return frame_id == "TXXX" and key.lower().startswith("txxx:replaygain")
+
+
+def copy_id3_metadata(
+    source_path: str, dest_path: str, skip_loudness_frames: bool = False
+) -> int:
     """Copy ID3 frames missing from dest_path out of source_path.
 
     Stale timing frames (such as TLEN) in dest_path are removed first.
@@ -56,6 +69,8 @@ def copy_id3_metadata(source_path: str, dest_path: str) -> int:
         copied = 0
         for key, frame in source_tags.items():
             if frame.FrameID in _NEVER_COPIED_FRAME_IDS or key in dest_tags:
+                continue
+            if skip_loudness_frames and _is_loudness_frame(key, frame):
                 continue
             dest_tags.add(frame)
             copied += 1

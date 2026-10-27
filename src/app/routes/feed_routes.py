@@ -136,6 +136,10 @@ def _collect_optional_settings(
     if exclude_strings is not _MISSING:
         cleaned = exclude_strings.strip() if isinstance(exclude_strings, str) else ""
         updates["episode_title_exclude_strings"] = cleaned or None
+        # The rendered feed changes, so readers must not get a stale 304.
+        updates["last_changed_at"] = datetime.datetime.now(datetime.UTC).replace(
+            tzinfo=None
+        )
 
     for field_name in ("trim_silence", "normalize_loudness"):
         value, error_response = _parse_optional_feed_bool(payload, field_name)

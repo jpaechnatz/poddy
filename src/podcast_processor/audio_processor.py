@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, NamedTuple
 
 from app.extensions import db
 from app.models import Identification, ModelCall, Post, TranscriptSegment
@@ -7,6 +7,13 @@ from app.writer.client import writer_client
 from podcast_processor.ad_merger import AdMerger
 from podcast_processor.audio import clip_segments_with_fade, get_audio_duration_ms
 from shared.config import Config
+
+
+class AudioCutResult(NamedTuple):
+    """Ad windows that were cut and the audio actually removed (ms)."""
+
+    ad_windows_ms: list[tuple[int, int]]
+    removed_windows_ms: list[tuple[int, int]]
 
 
 class AudioProcessor:
@@ -317,7 +324,7 @@ class AudioProcessor:
             return [*ad_segments[:-1], (ad_segments[-1][0], audio_duration_seconds)]
         return ad_segments
 
-    def process_audio(self, post: Post, output_path: str) -> list[tuple[int, int]]:
+    def process_audio(self, post: Post, output_path: str) -> AudioCutResult:
         """
         Process the podcast audio by removing ad segments.
 
@@ -325,8 +332,9 @@ class AudioProcessor:
             post: The Post object containing the podcast to process
             output_path: Path where the processed audio file should be saved
         Returns:
-            The audio actually removed, as millisecond windows. Fades keep the
-            edges of each ad, so these are narrower than the detected ads.
+            The merged ad windows and the audio actually removed, both in
+            milliseconds. Fades keep the edges of each ad, so the removed
+            windows are narrower than the ads.
         """
         ad_segments = self.get_ad_segments(post)
 
@@ -390,4 +398,7 @@ class AudioProcessor:
         self.logger.info(
             f"Audio processing complete for post {post.id}, saved to {output_path}"
         )
-        return removed_windows
+        return AudioCutResult(
+            ad_windows_ms=list(merged_ad_segments),
+            removed_windows_ms=removed_windows,
+        )

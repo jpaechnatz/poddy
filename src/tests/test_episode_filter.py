@@ -144,10 +144,9 @@ def test_settings_store_and_clear_exclude_strings(app: Any) -> None:
     )
     assert ok.get_json()["episode_title_exclude_strings"] == "Stammtisch"
     assert cleared.get_json()["episode_title_exclude_strings"] is None
-    assert seen == [
-        {"episode_title_exclude_strings": "Stammtisch"},
-        {"episode_title_exclude_strings": None},
-    ]
+    assert [u["episode_title_exclude_strings"] for u in seen] == ["Stammtisch", None]
+    # The rendered feed changes, so the feed ETag/Last-Modified must change too.
+    assert all("last_changed_at" in u for u in seen)
 
 
 def test_settings_reject_non_string_exclude_strings(app: Any) -> None:
@@ -190,3 +189,35 @@ def test_saving_filter_unwhitelists_only_unprocessed_matches(app: Any) -> None:
         assert queued.whitelisted is False
         assert main.whitelisted is True
         assert done.whitelisted is True  # already processed: left alone
+
+
+def test_aggregate_feed_fills_up_past_excluded_episodes(app: Any) -> None:
+    from app.feeds import get_user_aggregate_posts
+
+    with app.app_context():
+        feed = Feed(
+            rss_url="http://example.com/rk4",
+            title="RK",
+            episode_title_exclude_strings="Stammtisch",
+        )
+        db.session.add(feed)
+        db.session.commit()
+        for i in range(5):
+            db.session.add(
+                Post(
+                    feed_id=feed.id,
+                    title=("Stammtisch " if i < 3 else "Folge ") + str(i),
+                    guid=f"agg-{i}",
+                    download_url=f"http://example.com/agg-{i}.mp3",
+                    whitelisted=True,
+                    processed_audio_path=f"/tmp/agg-{i}.mp3",
+                    release_date=datetime.datetime(
+                        2026, 10, 20 - i, tzinfo=datetime.UTC
+                    ),
+                )
+            )
+        db.session.commit()
+
+        posts = get_user_aggregate_posts(0, limit_per_feed=3)
+
+    assert [p.guid for p in posts] == ["agg-3", "agg-4"]

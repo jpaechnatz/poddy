@@ -143,9 +143,12 @@ def _resolve_feed_id(path: str) -> int | None:
         return post.feed_id if post else None
 
     if path.startswith("/post/"):
-        remainder = path[len("/post/") :]
-        guid = remainder.split("/", 1)[0]
-        guid = guid.split(".", 1)[0]
+        guid = path[len("/post/") :]
+        # Strip only the known route suffixes; GUIDs may contain dots.
+        for suffix in ("/transcript.vtt", "/original.mp3", ".mp3"):
+            if guid.endswith(suffix):
+                guid = guid[: -len(suffix)]
+                break
         post = Post.query.filter_by(guid=guid).first()
         return post.feed_id if post else None
 

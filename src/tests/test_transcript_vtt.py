@@ -171,3 +171,24 @@ def test_finalize_stores_removed_windows_for_transcripts() -> None:
 
     stored = json.loads(writer.update.call_args.args[2]["audio_edits"])
     assert stored == {"ads": [[12.0, 18.0]], "silence": []}
+
+
+def test_token_feed_resolution_keeps_dots_in_guids(app: Any) -> None:
+    from app.auth.feed_tokens import _resolve_feed_id
+
+    with app.app_context():
+        feed = Feed(title="RK", rss_url="http://example.com/rk-dots")
+        db.session.add(feed)
+        db.session.commit()
+        _processed_post(feed, "ep.42", None)
+        other = Feed(title="Other", rss_url="http://example.com/other")
+        db.session.add(other)
+        db.session.commit()
+        _processed_post(other, "ep", None)
+
+        for path in (
+            "/post/ep.42/transcript.vtt",
+            "/post/ep.42.mp3",
+            "/post/ep.42/original.mp3",
+        ):
+            assert _resolve_feed_id(path) == feed.id
