@@ -153,7 +153,7 @@ def _render_podly_chapters_html(post: Post) -> str:
         (f"<li>{_format_chapter_timestamp(start_time)} {html.escape(title)}</li>")
         for start_time, title in chapters
     )
-    return f"<p><strong>Podly Chapters</strong></p><ul>{items}</ul>"
+    return f"<p><strong>Poddy Chapters</strong></p><ul>{items}</ul>"
 
 
 def _normalize_feed_text(value: str | None) -> str:
@@ -175,7 +175,7 @@ def _render_summary_html(post: Post) -> str:
         elif line:
             paragraphs.append(f"<p>{html.escape(line)}</p>")
     bullet_html = f"<ul>{''.join(bullets)}</ul>" if bullets else ""
-    return "<p><strong>Podly Summary</strong></p>" + "".join(paragraphs) + bullet_html
+    return "<p><strong>Poddy Summary</strong></p>" + "".join(paragraphs) + bullet_html
 
 
 def build_post_feed_description_html(post: Post) -> str:
@@ -888,7 +888,7 @@ def generate_feed_xml(feed: Feed) -> Any:
     last_build_date = format_datetime(_feed_last_changed_at_aware(feed))
 
     rss_feed = PyRSS2Gen.RSS2(
-        title="[podly] " + feed.title,
+        title="[poddy] " + feed.title,
         link=link,
         description=_normalize_feed_text(feed.description),
         lastBuildDate=last_build_date,
@@ -931,10 +931,10 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
     last_build_date = format_datetime(get_aggregate_feed_last_changed_at(user))
 
     if current_app.config.get("REQUIRE_AUTH") and user:
-        feed_title = f"Podly Podcasts - {user.username}"
+        feed_title = f"Poddy Podcasts - {user.username}"
         feed_description = f"Aggregate feed for {user.username} - Last 3 processed episodes from each subscribed feed."
     else:
-        feed_title = "Podly Podcasts"
+        feed_title = "Poddy Podcasts"
         feed_description = (
             "Aggregate feed - Last 3 processed episodes from each subscribed feed."
         )
@@ -979,11 +979,17 @@ def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post
             Post.processed_audio_path.isnot(None),
         ).order_by(Post.release_date.desc().nullslast(), Post.id.desc())
         if feed is not None and getattr(feed, "episode_title_exclude_strings", None):
-            posts = [
-                post
-                for post in query.limit(limit_per_feed * 20).all()
-                if not is_title_excluded(feed, post.title)
-            ][:limit_per_feed]
+            posts = []
+            page_size = max(limit_per_feed * 10, 20)
+            offset = 0
+            # Page until N eligible posts are found or the feed is exhausted.
+            while len(posts) < limit_per_feed:
+                page = query.offset(offset).limit(page_size).all()
+                if not page:
+                    break
+                posts.extend(p for p in page if not is_title_excluded(feed, p.title))
+                offset += page_size
+            posts = posts[:limit_per_feed]
         else:
             posts = query.limit(limit_per_feed).all()
         all_posts.extend(posts)

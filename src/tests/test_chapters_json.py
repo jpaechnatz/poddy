@@ -141,3 +141,15 @@ def test_chapter_routes_use_feed_token_auth(app: Any, tmp_path: Path) -> None:
     with app.app_context():
         assert _resolve_feed_id("/post/with/chapters.json") == feed_id
         assert _resolve_feed_id("/post/with/chapter-images/3") == feed_id
+
+
+def test_chapter_routes_hide_unwhitelisted_posts(app: Any, tmp_path: Path) -> None:
+    client, _ = _setup(app, tmp_path)
+    with app.app_context():
+        post = Post.query.filter_by(guid="with").first()
+        assert post is not None
+        post.whitelisted = False
+        db.session.commit()
+
+    assert client.get("/post/with/chapters.json").status_code == 404
+    assert client.get("/post/with/chapter-images/0").status_code == 404

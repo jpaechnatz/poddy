@@ -292,6 +292,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
   });
 
+  const markBacklogSeenMutation = useMutation({
+    mutationFn: () => feedsApi.markBacklogSeen(currentFeed.id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
+      toast.success(data?.message ?? 'Backlog marked as seen');
+    },
+    onError: () => {
+      toast.error('Could not mark the backlog as seen');
+    },
+  });
+
   const refreshFeedMutation = useMutation({
     mutationFn: () => feedsApi.refreshFeed(currentFeed.id),
     onSuccess: (data) => {
@@ -734,7 +745,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
               {showPodlyRssButton && (
                 <button
                   onClick={handleCopyRssToClipboard}
-                  title="Copy Podly RSS feed URL"
+                  title="Copy Poddy RSS feed URL"
                   className={`flex w-full items-center justify-center gap-3 rounded-lg bg-black px-4 py-3 text-center font-medium text-white transition-colors hover:bg-gray-900 sm:w-auto sm:justify-start sm:px-5 sm:py-2 ${
                     !canSubscribe ? 'opacity-60 cursor-not-allowed' : ''
                   }`}
@@ -742,12 +753,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 >
                   <img
                     src="/rss-round-color-icon.svg"
-                    alt="Podly RSS"
+                    alt="Poddy RSS"
                     className="h-6 w-6 shrink-0"
                     aria-hidden="true"
                   />
                   <span className="text-white">
-                    {canSubscribe ? 'Subscribe to Podly RSS' : 'Join feed to subscribe'}
+                    {canSubscribe ? 'Subscribe to Poddy RSS' : 'Join feed to subscribe'}
                   </span>
                 </button>
               )}
@@ -854,6 +865,26 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                         >
                           <span className="text-red-600">⛔</span>
                           Disable all episodes
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setShowMenu(false);
+                            if (
+                              window.confirm(
+                                'Stop processing all episodes that are not processed yet? ' +
+                                  'Queued and running jobs are cancelled; new episodes are still processed automatically.'
+                              )
+                            ) {
+                              markBacklogSeenMutation.mutate();
+                            }
+                          }}
+                          disabled={markBacklogSeenMutation.isPending || totalCount === 0}
+                          title="Stop processing existing unprocessed episodes; new episodes are still processed automatically"
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <span className="text-gray-600">👁</span>
+                          Mark backlog as seen
                         </button>
                       </>
                       )}
@@ -973,11 +1004,11 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
               <h4 className="font-semibold text-blue-900 mb-2">About Enabling & Disabling Ad Removal</h4>
               <div className="text-sm text-blue-800 space-y-2 text-left">
                 <p>
-                  <strong>Enabled episodes</strong> are processed by Podly to automatically detect and remove advertisements,
+                  <strong>Enabled episodes</strong> are processed by Poddy to automatically detect and remove advertisements,
                   giving you a clean, ad-free listening experience.
                 </p>
                 <p>
-                  <strong>Disabled episodes</strong> are not processed and won't be available for download through Podly.
+                  <strong>Disabled episodes</strong> are not processed and won't be available for download through Poddy.
                   This is useful for episodes you don't want to listen to.
                 </p>
                 <p>

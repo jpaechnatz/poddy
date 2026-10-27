@@ -1,59 +1,81 @@
-<h2 align="center">
-<img width="50%" src="src/app/static/images/logos/logo_with_text.png" />
+<h1 align="center">
+<img width="120" src="src/app/static/images/logos/logo.webp" alt="" /><br />
+Poddy
+</h1>
 
-</h2>
+<p align="center">Werbefreie Podcasts als eigener RSS-Feed – selbst gehostet, z. B. auf dem Raspberry Pi.</p>
 
-<p align="center">
-<p align="center">Ad-block for podcasts. Create an ad-free RSS feed.</p>
-<p align="center">
-  <a href="https://discord.gg/FRB98GtF6N" target="_blank">
-      <img src="https://img.shields.io/badge/discord-join-blue.svg?logo=discord&logoColor=white" alt="Discord">
-  </a>
-</p>
+Poddy ist ein Fork von [Podly Pure Podcasts](https://github.com/podly-pure-podcasts/podly_pure_podcasts).
+Interne Namen (Python-Paket, Umgebungsvariablen wie `PODLY_*`, Docker-Container)
+heißen weiterhin „podly“, damit bestehende Installationen kompatibel bleiben.
 
-## Overview
+<img width="100%" src="docs/images/screenshot.png" alt="Screenshot der Weboberfläche" />
 
-Podly uses Whisper and Chat GPT to remove ads from podcasts.
+## Was Poddy macht
 
-<img width="100%" src="docs/images/screenshot.png" />
+1. Du abonnierst einen Podcast in Poddy und bekommst dafür einen eigenen Feed.
+2. Poddy lädt neue Folgen herunter.
+3. Werbung wird erkannt – per KI (Transkript + LLM) oder über die Kapitelmarken
+   der Folge (z. B. Kapitel „Werbung“ oder „Musik: …“).
+4. Poddy schneidet sie heraus und liefert die bereinigte Folge an deine Podcast-App.
 
-## How To Run
+## Funktionen dieses Forks
 
-You have a few options to get started:
+- **Kapitel bleiben korrekt:** Kapitelmarken, Kapitelbilder und Links wandern
+  mit, wenn Werbung oder Pausen herausgeschnitten werden; Cover und andere
+  ID3-Tags bleiben erhalten.
+- **Folgen ausschließen:** Titel-Filter pro Feed, z. B. `Stammtisch`.
+- **Audio aufbereiten:** lange Pausen kürzen und Lautheit auf −16 LUFS
+  normalisieren (pro Feed).
+- **Transkripte im Feed:** `podcast:transcript` (WebVTT) passend zur
+  geschnittenen Folge, auf Wunsch in jedem Modus; Sprache fest oder „Auto“ für
+  Folgen mit fremdsprachigen Einspielern.
+- **KI-Zusammenfassung** in der Folgenbeschreibung (pro Feed).
+- **Kapitel als JSON:** `podcast:chapters` mit Bildern und Links für Apps, die
+  Podcasting 2.0 unterstützen.
+- **Kapitel-Modus mit Rückfall:** Folgen ohne Kapitel werden automatisch per KI
+  verarbeitet.
 
-- [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/podly?referralCode=NMdeg5&utm_medium=integration&utm_source=template&utm_campaign=generic)
-   - quick and easy setup in the cloud, follow our [Railway deployment guide](docs/how_to_run_railway.md). 
-   - Use this if you want to share your Podly server with others.
-- **Run Locally**: 
-   - For local development and customization, 
-   - see our [beginner's guide for running locally](docs/how_to_run_beginners.md). 
-   - Use this for the most cost-optimal & private setup.
-- **[Join The Preview Server](https://podly.up.railway.app/)**: 
-   - pay what you want (limited sign ups available)
+Alle neuen Optionen sind pro Feed in den Feed-Einstellungen zu finden und
+standardmäßig aus.
 
+## Installation
 
-## How it works:
+Poddy wird aus diesem Repository gebaut. Die fertigen Images des
+Originalprojekts (`./run_podly_docker.sh` ohne `--dev`) enthalten die
+Funktionen dieses Forks **nicht**.
 
-- You request an episode
-- Podly downloads the requested episode
-- Whisper transcribes the episode
-- LLM labels ad segments
-- Podly removes the ad segments
-- Podly delivers the ad-free version of the podcast to you
+```bash
+git clone https://github.com/jpaechnatz/poddy.git
+cd poddy
+cp .env.local.example .env.local   # API-Keys und Login eintragen
+docker compose -f compose.pi.yml up -d --build
+```
 
-### Cost Breakdown
-*Monthly cost breakdown for 5 podcasts*
+Danach läuft Poddy unter `http://<rechner>:5001`. `compose.pi.yml` baut die
+schlanke „lite“-Variante (Transkription über einen externen Dienst wie
+OpenRouter oder Groq) und funktioniert auf dem Raspberry Pi (arm64) wie auf
+normalen PCs (x86_64).
 
-| Cost    | Hosting  | Transcription | LLM    |
-|---------|----------|---------------|--------|
-| **free**| local    | local         | local  |
-| **$2**  | local    | local         | remote |
-| **$5**  | local    | remote        | remote |
-| **$10** | public (railway)  | remote        | remote |
-| **Pay What You Want** | [preview server](https://podly.up.railway.app/)    | n/a         | n/a  |
-| **$5.99/mo** | https://zeroads.ai/ | production fork of podly | |
+- **Raspberry Pi, OpenRouter/Voxtral, Tailscale Funnel:**
+  [docs/raspberry_pi.md](docs/raspberry_pi.md)
+- **Lokales Whisper, GPU, Entwicklung:**
+  [docs/how_to_run_beginners.md](docs/how_to_run_beginners.md) und
+  [docs/contributors.md](docs/contributors.md)
 
+Wenn Poddy aus dem Internet erreichbar ist, unbedingt `REQUIRE_AUTH=true`
+setzen (siehe `.env.local.example`).
 
-## Contributing
+## Kosten
 
-See [contributing guide](docs/contributors.md) for local setup & contribution instructions.
+Poddy selbst ist kostenlos. Kosten entstehen nur, wenn Transkription oder LLM
+über einen externen Anbieter laufen, und hängen von Modell und Folgenlänge ab.
+Im Kapitel-Modus ohne Transkript fallen gar keine API-Kosten an.
+
+## Mitmachen
+
+Lokale Einrichtung, Tests und Konventionen: [docs/contributors.md](docs/contributors.md).
+
+## Lizenz
+
+Siehe [LICENCE](LICENCE). Poddy baut auf der Arbeit der Podly-Pure-Podcasts-Entwickler auf.

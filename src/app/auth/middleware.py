@@ -56,9 +56,11 @@ _PUBLIC_EXTENSIONS: tuple[str, ...] = (
 _TOKEN_PROTECTED_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^/feed/[^/]+$"),
     re.compile(r"^/feed/user/[^/]+$"),
-    re.compile(r"^/api/posts/[^/]+/(audio|download(?:/original)?)$"),
+    # GUIDs may contain "/" (URL- or tag:-style); the path arrives decoded, so
+    # the GUID part matches across slashes up to the known route suffix.
+    re.compile(r"^/api/posts/.+/(audio|download(?:/original)?)$"),
     re.compile(
-        r"^/post/[^/]+(?:\.mp3|/original\.mp3|/transcript\.vtt|/chapters\.json"
+        r"^/post/.+(?:\.mp3|/original\.mp3|/transcript\.vtt|/chapters\.json"
         r"|/chapter-images/\d+)$"
     ),
 )

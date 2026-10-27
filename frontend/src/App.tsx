@@ -106,11 +106,11 @@ function AppShell() {
               <Link to="/" className="flex items-center">
                 <img 
                   src="/images/logos/logo.webp" 
-                  alt="Podly" 
+                  alt="Poddy" 
                   className="h-6 w-auto"
                 />
                 <h1 className="ml-2 text-lg font-semibold text-gray-900">
-                  Podly
+                  Poddy
                 </h1>
               </Link>
             </div>

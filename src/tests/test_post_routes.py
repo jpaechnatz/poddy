@@ -608,7 +608,7 @@ def test_feed_posts_include_podly_description_html(app):
     item = data["items"][0]
     assert item["description"] == "<p>Original episode description</p>"
     assert "Original episode description" in item["podly_description_html"]
-    assert "Podly Chapters" in item["podly_description_html"]
+    assert "Poddy Chapters" in item["podly_description_html"]
     assert "<li>00:00 Intro</li>" in item["podly_description_html"]
     assert "<li>08:05 Gold mission</li>" in item["podly_description_html"]
     assert "Podly Post JSON" not in item["podly_description_html"]

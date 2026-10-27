@@ -93,6 +93,10 @@ class CommandExecutor:
             writer_actions.whitelist_latest_post_for_feed_action,
         )
         self.register_action(
+            "mark_backlog_seen",
+            writer_actions.mark_backlog_seen_action,
+        )
+        self.register_action(
             "unwhitelist_excluded_posts",
             writer_actions.unwhitelist_excluded_posts_action,
         )
