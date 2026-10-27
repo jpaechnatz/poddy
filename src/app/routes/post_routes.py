@@ -12,9 +12,14 @@ from sqlalchemy import func
 
 from app.auth.guards import require_admin
 from app.auth.service import update_user_last_active
+from app.chapters_json import build_chapters_json, chapter_image, processed_chapters
 from app.extensions import db
-from app.feeds import build_post_feed_description_html
-from app.guid_urls import post_download_api_path
+from app.feeds import (
+    _append_feed_token_params,
+    _get_base_url,
+    build_post_feed_description_html,
+)
+from app.guid_urls import post_chapter_image_path, post_download_api_path
 from app.jobs_manager import get_jobs_manager
 from app.model_call_utils import whisper_model_call_filter
 from app.models import (
@@ -1281,6 +1286,55 @@ def get_post_transcript_vtt(p_guid: str) -> ResponseReturnValue:
         )
     response = flask.make_response(vtt)
     response.headers["Content-Type"] = "text/vtt; charset=utf-8"
+    return response
+
+
+def _processed_post_chapters(p_guid: str) -> list[Any] | None:
+    post = Post.query.filter_by(guid=p_guid).first()
+    if post is None or not post.processed_audio_path:
+        return None
+    return processed_chapters(post.processed_audio_path) or None
+
+
+@post_bp.route("/post/<path:p_guid>/chapters.json", methods=["GET"])
+def get_post_chapters_json(p_guid: str) -> ResponseReturnValue:
+    """Serve Podcasting 2.0 JSON chapters matching the processed audio."""
+    chapters = _processed_post_chapters(p_guid)
+    if chapters is None:
+        return flask.make_response(
+            jsonify({"error": "Chapters not available", "error_code": "NOT_FOUND"}),
+            404,
+        )
+    base_url = _get_base_url()
+    document = build_chapters_json(
+        chapters,
+        lambda index: _append_feed_token_params(
+            f"{base_url}{post_chapter_image_path(p_guid, index)}"
+        ),
+    )
+    response = flask.make_response(json.dumps(document, ensure_ascii=False))
+    response.headers["Content-Type"] = "application/json+chapters; charset=utf-8"
+    return response
+
+
+@post_bp.route("/post/<path:p_guid>/chapter-images/<int:index>", methods=["GET"])
+def get_post_chapter_image(p_guid: str, index: int) -> ResponseReturnValue:
+    """Serve a chapter image embedded in the processed MP3."""
+    chapters = _processed_post_chapters(p_guid)
+    image = (
+        chapter_image(chapters[index])
+        if chapters is not None and 0 <= index < len(chapters)
+        else None
+    )
+    if image is None:
+        return flask.make_response(
+            jsonify({"error": "Image not available", "error_code": "NOT_FOUND"}),
+            404,
+        )
+    data, mime = image
+    response = flask.make_response(data)
+    response.headers["Content-Type"] = mime
+    response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
 

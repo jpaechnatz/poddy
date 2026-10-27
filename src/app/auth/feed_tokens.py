@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import secrets
 from dataclasses import dataclass
 
@@ -145,7 +146,8 @@ def _resolve_feed_id(path: str) -> int | None:
     if path.startswith("/post/"):
         guid = path[len("/post/") :]
         # Strip only the known route suffixes; GUIDs may contain dots.
-        for suffix in ("/transcript.vtt", "/original.mp3", ".mp3"):
+        guid = re.sub(r"/chapter-images/\d+$", "", guid)
+        for suffix in ("/transcript.vtt", "/chapters.json", "/original.mp3", ".mp3"):
             if guid.endswith(suffix):
                 guid = guid[: -len(suffix)]
                 break

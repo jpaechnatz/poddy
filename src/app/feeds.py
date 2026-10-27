@@ -14,9 +14,10 @@ import feedparser
 import PyRSS2Gen
 from flask import current_app, g, request
 
+from app.chapters_json import CHAPTERS_MIME_TYPE, processed_chapters
 from app.episode_filter import is_post_excluded, is_title_excluded
 from app.extensions import db
-from app.guid_urls import post_stream_path, post_transcript_path
+from app.guid_urls import post_chapters_path, post_stream_path, post_transcript_path
 from app.models import Feed, Post, User, UserFeed
 from app.runtime_config import config
 from app.transcript_vtt import post_ids_with_transcripts, transcript_ready
@@ -638,12 +639,14 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
         duration_seconds: int | None = None,
         transcript_url: str | None = None,
         transcript_language: str | None = None,
+        chapters_url: str | None = None,
         **kwargs: Any,
     ) -> None:
         self.image_url = image_url
         self.duration_seconds = duration_seconds
         self.transcript_url = transcript_url
         self.transcript_language = transcript_language
+        self.chapters_url = chapters_url
         super().__init__(
             title=title,
             enclosure=enclosure,
@@ -671,6 +674,12 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
                 attrs["language"] = self.transcript_language
             handler.startElement("podcast:transcript", attrs)
             handler.endElement("podcast:transcript")
+        if self.chapters_url:
+            handler.startElement(
+                "podcast:chapters",
+                {"url": self.chapters_url, "type": CHAPTERS_MIME_TYPE},
+            )
+            handler.endElement("podcast:chapters")
         _publish_cdata_opt_element(handler, "content:encoded", self.description)
         super().publish_extensions(handler)
 
@@ -783,6 +792,12 @@ def feed_item(
         if transcript_language == "auto":
             transcript_language = None
 
+    chapters_url = None
+    if processed_chapters(getattr(post, "processed_audio_path", None)):
+        chapters_url = _append_feed_token_params(
+            f"{base_url}{post_chapters_path(post.guid)}"
+        )
+
     item = ItunesRSSItem(
         title=title,
         enclosure=PyRSS2Gen.Enclosure(
@@ -797,6 +812,7 @@ def feed_item(
         duration_seconds=duration_seconds,
         transcript_url=transcript_url,
         transcript_language=transcript_language,
+        chapters_url=chapters_url,
     )
 
     return item

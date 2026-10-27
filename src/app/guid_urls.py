@@ -25,3 +25,11 @@ def post_stream_path(guid: str) -> str:
 
 def post_transcript_path(guid: str) -> str:
     return f"/post/{encode_guid_for_url(guid)}/transcript.vtt"
+
+
+def post_chapters_path(guid: str) -> str:
+    return f"/post/{encode_guid_for_url(guid)}/chapters.json"
+
+
+def post_chapter_image_path(guid: str, index: int) -> str:
+    return f"/post/{encode_guid_for_url(guid)}/chapter-images/{index}"
