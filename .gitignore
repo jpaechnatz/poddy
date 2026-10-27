@@ -1,5 +1,4 @@
 .worktrees/*
-railway_scripts/
 
 __pycache__/
 *.py[cod]
@@ -62,8 +61,6 @@ frontend-build.log
 .claude-notes/
 CLAUDE_NOTES.md
 
-# Railway command script with credentials
-scripts/railway_command.sh
 
 # Virtual environment (uv creates .venv/ by default)
 .venv/

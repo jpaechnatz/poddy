@@ -2,7 +2,6 @@
 - move host/port/threads to docker config
 reaudit security + testing
 ci.sh
-test railway
 login for public facing
 podcast rss search
 

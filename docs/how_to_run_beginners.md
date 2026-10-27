@@ -15,14 +15,14 @@ Paste one of the prompts below into the chat box.
 If you don't have the repo downloaded:
 
 ```
-Help me install docker and run Podly https://github.com/podly-pure-podcasts/podly_pure_podcasts
+Help me install docker and run Podly https://github.com/jpaechnatz/poddy
 After the project is cloned, help me:
 - install docker & docker compose
-- run `./run_podly_docker.sh --build` then `./run_podly_docker.sh -d`
+- run `docker compose -f compose.pi.yml up -d --build` (builds this fork; do not use the prebuilt upstream images)
 - configure the app via the web UI at http://localhost:5001/config
 Be sure to check if a dependency is already installed before downloading.
 We recommend Docker because installing ffmpeg & local whisper can be difficult.
-The Docker image has both ffmpeg & local whisper preconfigured.
+The lite Docker image includes ffmpeg and uses remote transcription (OpenRouter, Groq or another OpenAI-compatible API).
 Podly works with many different LLMs, it does not require an OpenAI key.
 Check your work by retrieving the index page from localhost:5001 at the end.
 ```
@@ -33,11 +33,11 @@ If you do have the repo pulled, open this file and prompt:
 Review this project, follow this guide and start Podly on my computer.
 Briefly, help me:
 - install docker & docker compose
-- run `./run_podly_docker.sh --build` and then `./run_podly_docker.sh -d`
+- run `docker compose -f compose.pi.yml up -d --build` (builds this fork; do not use the prebuilt upstream images)
 - configure the app via the web UI at http://localhost:5001/config
 Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
-The docker image has both ffmpeg & local whisper preconfigured.
+The lite Docker image includes ffmpeg and uses remote transcription (OpenRouter, Groq or another OpenAI-compatible API).
 Podly works with many different LLMs; it does not need to work with OpenAI.
 Check your work by retrieving the index page from localhost:5001 at the end.
 ```
@@ -103,20 +103,26 @@ You should see version information for both commands.
 ### Download the Project
 
 ```bash
-git clone https://github.com/podly-pure-podcasts/podly_pure_podcasts.git
-cd podly_pure_podcasts
+git clone https://github.com/jpaechnatz/poddy.git
+cd poddy
 ```
 
 ## Running Podly
 
 ### Run the Application via Docker
 
+Build this fork from source. `./run_podly_docker.sh` without `--dev` pulls the
+upstream Podly images, which do not contain this fork's features.
+
 ```bash
-chmod +x run_podly_docker.sh
-./run_podly_docker.sh --build
-./run_podly_docker.sh            # foreground
-./run_podly_docker.sh -d         # detached
+# Lite image (remote transcription, e.g. OpenRouter or Groq) - also for Raspberry Pi
+docker compose -f compose.pi.yml up -d --build
+
+# Full CPU image with local Whisper (large, slow on small machines)
+docker compose -f compose.dev.cpu.yml up -d --build
 ```
+
+Raspberry Pi specifics: [raspberry_pi.md](raspberry_pi.md).
 
 ### Optional: Enable Authentication
 
@@ -238,9 +244,7 @@ To upgrade the application while you are in the terminal where it is running:
 
 ## Getting Help
 
-If you encounter issues ask in our discord, we're friendly!
-
-https://discord.gg/FRB98GtF6N
+If you encounter issues, open an issue at https://github.com/jpaechnatz/poddy/issues.
 
 ## What's Next?
 
