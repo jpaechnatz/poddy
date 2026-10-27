@@ -1278,7 +1278,10 @@ def download_post_legacy(p_guid: str) -> ResponseReturnValue:
 def get_post_transcript_vtt(p_guid: str) -> ResponseReturnValue:
     """Serve the transcript matching the processed audio (podcast:transcript)."""
     post = Post.query.filter_by(guid=p_guid).first()
-    vtt = render_post_transcript(post) if post is not None else None
+    # Like the audio routes: nothing for episodes that are not whitelisted.
+    vtt = (
+        render_post_transcript(post) if post is not None and post.whitelisted else None
+    )
     if vtt is None:
         return flask.make_response(
             jsonify({"error": "Transcript not available", "error_code": "NOT_FOUND"}),
@@ -1291,7 +1294,7 @@ def get_post_transcript_vtt(p_guid: str) -> ResponseReturnValue:
 
 def _processed_post_chapters(p_guid: str) -> list[Any] | None:
     post = Post.query.filter_by(guid=p_guid).first()
-    if post is None or not post.processed_audio_path:
+    if post is None or not post.whitelisted or not post.processed_audio_path:
         return None
     return processed_chapters(post.processed_audio_path) or None
 

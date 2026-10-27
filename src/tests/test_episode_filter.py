@@ -221,3 +221,34 @@ def test_aggregate_feed_fills_up_past_excluded_episodes(app: Any) -> None:
         posts = get_user_aggregate_posts(0, limit_per_feed=3)
 
     assert [p.guid for p in posts] == ["agg-3", "agg-4"]
+
+
+def test_aggregate_feed_scans_past_many_excluded_episodes(app: Any) -> None:
+    from app.feeds import get_user_aggregate_posts
+
+    with app.app_context():
+        feed = Feed(
+            rss_url="http://example.com/rk5",
+            title="RK",
+            episode_title_exclude_strings="Stammtisch",
+        )
+        db.session.add(feed)
+        db.session.commit()
+        base = datetime.datetime(2026, 10, 1, tzinfo=datetime.UTC)
+        for i in range(70):
+            db.session.add(
+                Post(
+                    feed_id=feed.id,
+                    title=("Stammtisch " if i < 65 else "Folge ") + str(i),
+                    guid=f"scan-{i}",
+                    download_url=f"http://example.com/scan-{i}.mp3",
+                    whitelisted=True,
+                    processed_audio_path=f"/tmp/scan-{i}.mp3",
+                    release_date=base - datetime.timedelta(days=i),
+                )
+            )
+        db.session.commit()
+
+        posts = get_user_aggregate_posts(0, limit_per_feed=3)
+
+    assert [p.guid for p in posts] == ["scan-65", "scan-66", "scan-67"]

@@ -192,3 +192,50 @@ def test_token_feed_resolution_keeps_dots_in_guids(app: Any) -> None:
             "/post/ep.42/original.mp3",
         ):
             assert _resolve_feed_id(path) == feed.id
+
+
+def test_token_auth_covers_guids_with_slashes(app: Any) -> None:
+    from app.auth.feed_tokens import _resolve_feed_id
+
+    guid = "tag:audioboom.com,2026:/posts/42"
+    with app.app_context():
+        feed = Feed(title="RK", rss_url="http://example.com/rk-slash")
+        db.session.add(feed)
+        db.session.commit()
+        _processed_post(feed, guid, json.dumps({"ads": []}))
+
+        for suffix in (
+            ".mp3",
+            "/original.mp3",
+            "/transcript.vtt",
+            "/chapters.json",
+            "/chapter-images/0",
+        ):
+            path = f"/post/{guid}{suffix}"
+            assert _is_token_protected_endpoint(path), path
+            assert _resolve_feed_id(path) == feed.id, path
+        for suffix in ("/audio", "/download", "/download/original"):
+            path = f"/api/posts/{guid}{suffix}"
+            assert _is_token_protected_endpoint(path), path
+            assert _resolve_feed_id(path) == feed.id, path
+
+
+def test_transcript_route_handles_encoded_slash_guid_and_whitelist(
+    app: Any,
+) -> None:
+    app.testing = True
+    app.register_blueprint(post_bp)
+    with app.app_context():
+        feed = Feed(title="RK", rss_url="http://example.com/rk-wl")
+        db.session.add(feed)
+        db.session.commit()
+        listed = _processed_post(feed, "tag:x/posts/1", json.dumps({"ads": []}))
+        _add_segments(listed)
+        hidden = _processed_post(feed, "hidden", json.dumps({"ads": []}))
+        _add_segments(hidden)
+        hidden.whitelisted = False
+        db.session.commit()
+
+    client = app.test_client()
+    assert client.get("/post/tag%3Ax%2Fposts%2F1/transcript.vtt").status_code == 200
+    assert client.get("/post/hidden/transcript.vtt").status_code == 404

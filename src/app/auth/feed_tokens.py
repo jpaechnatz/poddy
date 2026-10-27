@@ -136,11 +136,10 @@ def _resolve_feed_id(path: str) -> int | None:
             return None
 
     if path.startswith("/api/posts/"):
-        parts = path.split("/")
-        if len(parts) < 4:
+        match = re.match(r"^/api/posts/(.+)/(?:audio|download(?:/original)?)$", path)
+        if match is None:
             return None
-        guid = parts[3]
-        post = Post.query.filter_by(guid=guid).first()
+        post = Post.query.filter_by(guid=match.group(1)).first()
         return post.feed_id if post else None
 
     if path.startswith("/post/"):

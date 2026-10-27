@@ -979,11 +979,17 @@ def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post
             Post.processed_audio_path.isnot(None),
         ).order_by(Post.release_date.desc().nullslast(), Post.id.desc())
         if feed is not None and getattr(feed, "episode_title_exclude_strings", None):
-            posts = [
-                post
-                for post in query.limit(limit_per_feed * 20).all()
-                if not is_title_excluded(feed, post.title)
-            ][:limit_per_feed]
+            posts = []
+            page_size = max(limit_per_feed * 10, 20)
+            offset = 0
+            # Page until N eligible posts are found or the feed is exhausted.
+            while len(posts) < limit_per_feed:
+                page = query.offset(offset).limit(page_size).all()
+                if not page:
+                    break
+                posts.extend(p for p in page if not is_title_excluded(feed, p.title))
+                offset += page_size
+            posts = posts[:limit_per_feed]
         else:
             posts = query.limit(limit_per_feed).all()
         all_posts.extend(posts)
