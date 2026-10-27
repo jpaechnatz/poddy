@@ -902,7 +902,7 @@ def test_feed_item_appends_podly_chapters(mock_post, app):
 
     description = result.description
     assert isinstance(description, str)
-    assert "Podly Chapters" in description
+    assert "Poddy Chapters" in description
     assert "<li>00:00 Episode intro</li>" in description
     assert "<li>08:05 Gold mission</li>" in description
     assert "Podly Post JSON" not in description
@@ -1051,7 +1051,7 @@ def test_feed_item_serializes_rich_description_and_content_encoded(mock_post, ap
     assert "<content:encoded><![CDATA[<p>Original episode description</p>" in xml
     assert "<li>00:00 Intro</li>" in xml
     assert "<li>08:05 Gold mission</li>" in xml
-    assert "&lt;p&gt;&lt;strong&gt;Podly Chapters&lt;/strong&gt;&lt;/p&gt;" not in xml
+    assert "&lt;p&gt;&lt;strong&gt;Poddy Chapters&lt;/strong&gt;&lt;/p&gt;" not in xml
 
 
 def test_feed_item_normalizes_problematic_source_whitespace(mock_post, app):

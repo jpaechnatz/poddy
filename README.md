@@ -6,7 +6,8 @@ Poddy
 <p align="center">Werbefreie Podcasts als eigener RSS-Feed – selbst gehostet, z. B. auf dem Raspberry Pi.</p>
 
 Poddy ist ein Fork von [Podly Pure Podcasts](https://github.com/podly-pure-podcasts/podly_pure_podcasts).
-Die App selbst heißt in der Oberfläche weiterhin „Podly“.
+Interne Namen (Python-Paket, Umgebungsvariablen wie `PODLY_*`, Docker-Container)
+heißen weiterhin „podly“, damit bestehende Installationen kompatibel bleiben.
 
 <img width="100%" src="docs/images/screenshot.png" alt="Screenshot der Weboberfläche" />
 

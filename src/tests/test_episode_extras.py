@@ -213,10 +213,10 @@ def test_summary_is_rendered_first_and_escaped() -> None:
 
     html_text = build_post_feed_description_html(post)
 
-    assert html_text.startswith("<p><strong>Podly Summary</strong></p>")
+    assert html_text.startswith("<p><strong>Poddy Summary</strong></p>")
     assert "<p>Überblick &lt;b&gt;fett&lt;/b&gt;.</p>" in html_text
     assert "<ul><li>Amiga &amp; Atari</li><li>C64</li></ul>" in html_text
-    assert html_text.index("Podly Summary") < html_text.index("<p>Original</p>")
+    assert html_text.index("Poddy Summary") < html_text.index("<p>Original</p>")
 
 
 def test_settings_accept_extras_flags(app: Any) -> None:

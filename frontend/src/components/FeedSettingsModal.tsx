@@ -271,7 +271,7 @@ export default function FeedSettingsModal({
             <p className="text-xs text-gray-500 mt-1">
               Comma-separated list. Episodes whose title contains any of these
               (case-insensitive) are never auto-whitelisted and are left out of
-              the Podly RSS feed.
+              the Poddy RSS feed.
             </p>
           </div>
 
@@ -423,11 +423,11 @@ export default function FeedSettingsModal({
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
             >
               <option value="source">Source description</option>
-              <option value="podly">Podly description preview</option>
+              <option value="podly">Poddy description preview</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              Uses the same composed description as the Podly RSS feed (source
-              description + Podly chapters). This affects only the UI preview
+              Uses the same composed description as the Poddy RSS feed (source
+              description + Poddy chapters). This affects only the UI preview
               and does not change source RSS content.
             </p>
           </div>

@@ -153,7 +153,7 @@ def _render_podly_chapters_html(post: Post) -> str:
         (f"<li>{_format_chapter_timestamp(start_time)} {html.escape(title)}</li>")
         for start_time, title in chapters
     )
-    return f"<p><strong>Podly Chapters</strong></p><ul>{items}</ul>"
+    return f"<p><strong>Poddy Chapters</strong></p><ul>{items}</ul>"
 
 
 def _normalize_feed_text(value: str | None) -> str:
@@ -175,7 +175,7 @@ def _render_summary_html(post: Post) -> str:
         elif line:
             paragraphs.append(f"<p>{html.escape(line)}</p>")
     bullet_html = f"<ul>{''.join(bullets)}</ul>" if bullets else ""
-    return "<p><strong>Podly Summary</strong></p>" + "".join(paragraphs) + bullet_html
+    return "<p><strong>Poddy Summary</strong></p>" + "".join(paragraphs) + bullet_html
 
 
 def build_post_feed_description_html(post: Post) -> str:
@@ -888,7 +888,7 @@ def generate_feed_xml(feed: Feed) -> Any:
     last_build_date = format_datetime(_feed_last_changed_at_aware(feed))
 
     rss_feed = PyRSS2Gen.RSS2(
-        title="[podly] " + feed.title,
+        title="[poddy] " + feed.title,
         link=link,
         description=_normalize_feed_text(feed.description),
         lastBuildDate=last_build_date,
@@ -931,10 +931,10 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
     last_build_date = format_datetime(get_aggregate_feed_last_changed_at(user))
 
     if current_app.config.get("REQUIRE_AUTH") and user:
-        feed_title = f"Podly Podcasts - {user.username}"
+        feed_title = f"Poddy Podcasts - {user.username}"
         feed_description = f"Aggregate feed for {user.username} - Last 3 processed episodes from each subscribed feed."
     else:
-        feed_title = "Podly Podcasts"
+        feed_title = "Poddy Podcasts"
         feed_description = (
             "Aggregate feed - Last 3 processed episodes from each subscribed feed."
         )

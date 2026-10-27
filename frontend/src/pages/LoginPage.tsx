@@ -92,9 +92,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md bg-white shadow-lg rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col items-center gap-2 mb-6">
           <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <img src="/images/logos/logo.webp" alt="Podly" className="h-10 w-auto" />
+            <img src="/images/logos/logo.webp" alt="Poddy" className="h-10 w-auto" />
           </Link>
-          <h1 className="text-xl font-semibold text-gray-900">Sign in to Podly</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Sign in to Poddy</h1>
         </div>
 
         {error && (

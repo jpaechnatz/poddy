@@ -745,7 +745,7 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
               {showPodlyRssButton && (
                 <button
                   onClick={handleCopyRssToClipboard}
-                  title="Copy Podly RSS feed URL"
+                  title="Copy Poddy RSS feed URL"
                   className={`flex w-full items-center justify-center gap-3 rounded-lg bg-black px-4 py-3 text-center font-medium text-white transition-colors hover:bg-gray-900 sm:w-auto sm:justify-start sm:px-5 sm:py-2 ${
                     !canSubscribe ? 'opacity-60 cursor-not-allowed' : ''
                   }`}
@@ -753,12 +753,12 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                 >
                   <img
                     src="/rss-round-color-icon.svg"
-                    alt="Podly RSS"
+                    alt="Poddy RSS"
                     className="h-6 w-6 shrink-0"
                     aria-hidden="true"
                   />
                   <span className="text-white">
-                    {canSubscribe ? 'Subscribe to Podly RSS' : 'Join feed to subscribe'}
+                    {canSubscribe ? 'Subscribe to Poddy RSS' : 'Join feed to subscribe'}
                   </span>
                 </button>
               )}
@@ -997,11 +997,11 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
               <h4 className="font-semibold text-blue-900 mb-2">About Enabling & Disabling Ad Removal</h4>
               <div className="text-sm text-blue-800 space-y-2 text-left">
                 <p>
-                  <strong>Enabled episodes</strong> are processed by Podly to automatically detect and remove advertisements,
+                  <strong>Enabled episodes</strong> are processed by Poddy to automatically detect and remove advertisements,
                   giving you a clean, ad-free listening experience.
                 </p>
                 <p>
-                  <strong>Disabled episodes</strong> are not processed and won't be available for download through Podly.
+                  <strong>Disabled episodes</strong> are not processed and won't be available for download through Poddy.
                   This is useful for episodes you don't want to listen to.
                 </p>
                 <p>
