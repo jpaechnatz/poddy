@@ -391,7 +391,12 @@ class PodcastProcessor:
         """
         if ad_detection_strategy == "chapter":
             self._perform_chapter_based_processing(
-                post, job, processed_audio_path, cancel_callback, chapter_filter_strings
+                post,
+                job,
+                processed_audio_path,
+                cancel_callback,
+                chapter_filter_strings,
+                enable_llm_chapter_fallback_tagging,
             )
         elif ad_detection_strategy == "chapter_insert":
             self._perform_chapter_insertion_only_processing(
@@ -781,10 +786,12 @@ class PodcastProcessor:
         processed_audio_path: str,
         cancel_callback: Callable[[], bool] | None = None,
         chapter_filter_strings: str | None = None,
+        enable_llm_chapter_fallback_tagging: bool | None = None,
     ) -> None:
         """
         Perform chapter-based ad detection: read chapters, filter by title, remove ads.
-        Skips transcription and LLM classification.
+        Skips transcription and LLM classification. Episodes without embedded
+        chapters fall back to LLM ad detection.
         """
         from shared import defaults as DEFAULTS
 
@@ -804,7 +811,20 @@ class PodcastProcessor:
                 str(post.unprocessed_audio_path)
             )
         except ChapterDetectionError as e:
-            raise ProcessorException(str(e)) from e
+            self.logger.warning(
+                "Chapter-based detection unavailable for post %s (%s); "
+                "falling back to LLM ad detection",
+                post.id,
+                e,
+            )
+            self._perform_llm_based_processing(
+                post,
+                job,
+                processed_audio_path,
+                cancel_callback,
+                enable_llm_chapter_fallback_tagging,
+            )
+            return
 
         self._raise_if_cancelled(job, 2, cancel_callback)
 
