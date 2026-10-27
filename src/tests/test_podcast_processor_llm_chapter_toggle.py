@@ -375,6 +375,7 @@ def test_processing_steps_routes_chapter_insert_strategy() -> None:
         job,
         "/tmp/output.mp3",
         None,
+        polish_options=None,
     )
     processor._perform_chapter_based_processing.assert_not_called()
     processor._perform_llm_based_processing.assert_not_called()

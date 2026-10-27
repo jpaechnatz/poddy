@@ -36,7 +36,9 @@ def test_episode_without_chapters_uses_llm_detection() -> None:
         )
 
     llm_mock = cast(MagicMock, processor._perform_llm_based_processing)
-    llm_mock.assert_called_once_with(post, job, "/out.mp3", None, True)
+    llm_mock.assert_called_once_with(
+        post, job, "/out.mp3", None, True, polish_options=None
+    )
     cast(MagicMock, processor._finalize_processing).assert_not_called()
 
 

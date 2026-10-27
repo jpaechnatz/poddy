@@ -154,8 +154,7 @@ def test_finalize_polishes_when_feed_enables_it() -> None:
     processor.logger = mock.MagicMock()
     processor.status_manager = mock.MagicMock()
     processor._remove_unprocessed_audio = mock.MagicMock()
-    feed = Feed(title="RK", rss_url="u", trim_silence=True, normalize_loudness=None)
-    post = Post(id=1, guid="g", feed=feed)
+    post = Post(id=1, guid="g")
     chapter_data = json.dumps(
         {"chapters_for_output": [{"title": "B", "start_time": 11.0, "end_time": 16.0}]}
     )
@@ -173,7 +172,11 @@ def test_finalize_polishes_when_feed_enables_it() -> None:
     ):
         writer.update.return_value = SimpleNamespace(success=True)
         processor._finalize_processing(
-            post, ProcessingJob(), "/out.mp3", chapter_data=chapter_data
+            post,
+            ProcessingJob(),
+            "/out.mp3",
+            chapter_data=chapter_data,
+            polish_options=PolishOptions(trim_silence=True),
         )
 
     polish_mock.assert_called_once_with(
@@ -245,3 +248,34 @@ def test_windows_are_reported_even_if_chapter_rewrite_fails(tmp_path: Path) -> N
 
     # The audio was already trimmed, so callers must still shift their data.
     assert len(windows) == 1
+
+
+def test_polish_options_are_read_before_processing_not_in_finalize() -> None:
+    """finalize must not lazy-load post.feed (the post is expired by then)."""
+    feed = Feed(
+        title="RK",
+        rss_url="u",
+        ad_detection_strategy="llm",
+        trim_silence=True,
+        normalize_loudness=None,
+    )
+    processor = object.__new__(PodcastProcessor)
+    steps = mock.MagicMock()
+    processor._perform_processing_steps = steps
+    processor.status_manager = mock.MagicMock()
+    processor.logger = mock.MagicMock()
+    processor._check_existing_processed_audio = mock.MagicMock(return_value=False)
+    processor._simulate_developer_processing = mock.MagicMock(return_value=None)
+    processor._handle_download_step = mock.MagicMock()
+    processor._raise_if_cancelled = mock.MagicMock()
+    processor._acquire_processing_lock = mock.MagicMock(return_value="/nope/out.mp3")
+    processor.config = mock.MagicMock(enable_llm_chapter_fallback_tagging=False)
+    processor.db_session = mock.MagicMock()
+    post = Post(id=1, guid="g", title="t", whitelisted=True, feed=feed)
+    processor.db_session.get.return_value = ProcessingJob(id="j", current_step=0)
+
+    processor.process(post, "j")
+
+    assert steps.call_args.kwargs["polish_options"] == PolishOptions(
+        trim_silence=True, normalize_loudness=False
+    )
