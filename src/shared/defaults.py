@@ -29,7 +29,8 @@ WHISPER_REMOTE_CHUNKSIZE_MB = 24
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Cheap, reliable segment timestamps (~$0.012 per audio hour on OpenRouter).
 OPENROUTER_TRANSCRIBE_MODEL = "openai/whisper-large-v3-turbo"
-OPENROUTER_LLM_MODEL = "openrouter/deepseek/deepseek-v4.1-flash"
+# "~...-latest" is an OpenRouter alias for the newest DeepSeek Flash model.
+OPENROUTER_LLM_MODEL = "openrouter/~deepseek/deepseek-flash-latest"
 # OpenRouter caps uploads at 25 MB and upstream processing at 60 s.
 OPENROUTER_CHUNKSIZE_MB = 10
 

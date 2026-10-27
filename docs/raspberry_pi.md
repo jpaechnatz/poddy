@@ -41,10 +41,15 @@ WHISPER_LANGUAGE=de
 ```
 
 Damit richtet Poddy automatisch Transkription (`openai/whisper-large-v3-turbo`)
-und KI (`deepseek/deepseek-v4.1-flash`) über OpenRouter ein. Andere Modelle,
-Login und Tailscale-Einstellungen sind in der Datei kommentiert erklärt;
-`WHISPER_LANGUAGE=auto` erkennt die Sprache selbst (gut bei fremdsprachigen
-Einspielern). Die Sprache lässt sich zusätzlich pro Feed ändern.
+und KI (`~deepseek/deepseek-flash-latest`, immer das neueste DeepSeek-Flash-Modell)
+über OpenRouter ein. Andere Modelle, Login und Tailscale-Einstellungen sind
+in der Datei kommentiert erklärt.
+
+Sprache: Eine feste Sprache (`de`) ist für einsprachige Podcasts die bessere
+Wahl; fremdsprachige Einspieler werden dann meist übersetzt. `auto` erkennt die
+Sprache je Abschnitt von etwa 10 Minuten und lohnt sich nur, wenn sie von Folge
+zu Folge wechselt. Englische Podcasts wie Darknet Diaries stellst du in den
+Feed-Einstellungen auf „English“.
 
 ## 4. Datenbank
 
