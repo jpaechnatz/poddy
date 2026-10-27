@@ -100,6 +100,45 @@ def _parse_optional_feed_bool(
     return value, None
 
 
+def _parse_optional_feed_string(
+    payload: dict[str, Any],
+    field_name: str,
+) -> tuple[object, ResponseReturnValue | None]:
+    if field_name not in payload:
+        return _MISSING, None
+
+    value = payload[field_name]
+    if value is not None and not isinstance(value, str):
+        return (
+            _MISSING,
+            (jsonify({"error": f"{field_name} must be a string or null"}), 400),
+        )
+    return value, None
+
+
+def _collect_optional_text_settings(
+    payload: dict[str, Any], updates: dict[str, Any]
+) -> ResponseReturnValue | None:
+    """Validate the per-feed string settings and add them to updates."""
+    filter_strings, error_response = _parse_optional_feed_string(
+        payload, "chapter_filter_strings"
+    )
+    if error_response is not None:
+        return error_response
+    if filter_strings is not _MISSING:
+        updates["chapter_filter_strings"] = filter_strings
+
+    exclude_strings, error_response = _parse_optional_feed_string(
+        payload, "episode_title_exclude_strings"
+    )
+    if error_response is not None:
+        return error_response
+    if exclude_strings is not _MISSING:
+        cleaned = exclude_strings.strip() if isinstance(exclude_strings, str) else ""
+        updates["episode_title_exclude_strings"] = cleaned or None
+    return None
+
+
 def _build_feed_settings_updates(
     feed: Feed,
     payload: dict[str, Any],
@@ -125,19 +164,9 @@ def _build_feed_settings_updates(
             )
         updates["ad_detection_strategy"] = strategy
 
-    if "chapter_filter_strings" in payload:
-        filter_strings = payload["chapter_filter_strings"]
-        if filter_strings is not None and not isinstance(filter_strings, str):
-            return (
-                None,
-                (
-                    jsonify(
-                        {"error": "chapter_filter_strings must be a string or null"}
-                    ),
-                    400,
-                ),
-            )
-        updates["chapter_filter_strings"] = filter_strings
+    error_response = _collect_optional_text_settings(payload, updates)
+    if error_response is not None:
+        return None, error_response
 
     chapter_fallback_enabled, error_response = _parse_optional_feed_bool(
         payload,
@@ -1097,6 +1126,9 @@ def _serialize_feed(
         "is_active_subscription": is_active_subscription,
         "ad_detection_strategy": getattr(feed, "ad_detection_strategy", "llm"),
         "chapter_filter_strings": getattr(feed, "chapter_filter_strings", None),
+        "episode_title_exclude_strings": getattr(
+            feed, "episode_title_exclude_strings", None
+        ),
         "enable_llm_chapter_fallback_tagging": getattr(
             feed, "enable_llm_chapter_fallback_tagging", None
         ),

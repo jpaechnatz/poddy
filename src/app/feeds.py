@@ -14,6 +14,7 @@ import feedparser
 import PyRSS2Gen
 from flask import current_app, g, request
 
+from app.episode_filter import is_post_excluded, is_title_excluded
 from app.extensions import db
 from app.guid_urls import post_stream_path
 from app.models import Feed, Post, User, UserFeed
@@ -362,6 +363,9 @@ def fetch_feed(url: str) -> feedparser.FeedParserDict:
 def _should_whitelist_new_post(
     feed: Feed, post: Post, floor_date: datetime.date | None
 ) -> bool:
+    if is_title_excluded(feed, post.title):
+        logger.info("not whitelisting post excluded by title filter: %s", post.title)
+        return False
     if floor_date is not None and post.release_date is None:
         logger.debug(
             "skipping post without release_date for existing feed: %s",
@@ -801,7 +805,9 @@ def generate_feed_xml(feed: Feed) -> Any:
             .all()
         )
 
-    items = [feed_item(post) for post in posts]
+    items = [
+        feed_item(post) for post in posts if not is_title_excluded(feed, post.title)
+    ]
 
     base_url = _get_base_url()
     link = _append_feed_token_params(f"{base_url}/feed/{feed.id}")
@@ -831,7 +837,11 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
     logger.info(f"Generating aggregate feed XML for: {username}")
 
     posts = get_user_aggregate_posts(user_id)
-    items = [feed_item(post, prepend_feed_title=True) for post in posts]
+    items = [
+        feed_item(post, prepend_feed_title=True)
+        for post in posts
+        if not is_post_excluded(post)
+    ]
 
     base_url = _get_base_url()
     link = _append_feed_token_params(f"{base_url}/feed/user/{user_id}")

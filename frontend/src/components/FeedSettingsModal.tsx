@@ -50,6 +50,9 @@ export default function FeedSettingsModal({
         : 'inherit'
   );
   const [languageOverride, setLanguageOverride] = useState(feed.language ?? '');
+  const [excludeStrings, setExcludeStrings] = useState(
+    feed.episode_title_exclude_strings ?? ''
+  );
 
   useEffect(() => {
     setStrategy(feed.ad_detection_strategy || 'llm');
@@ -69,6 +72,7 @@ export default function FeedSettingsModal({
           : 'inherit'
     );
     setLanguageOverride(feed.language ?? '');
+    setExcludeStrings(feed.episode_title_exclude_strings ?? '');
   }, [feed, llmChapterFallbackGlobalDefault]);
 
   const updateMutation = useMutation({
@@ -95,6 +99,7 @@ export default function FeedSettingsModal({
         ? 'off'
         : 'inherit';
   const currentLanguageOverride = feed.language ?? '';
+  const currentExcludeStrings = feed.episode_title_exclude_strings ?? '';
 
   const handleSave = () => {
     const settings: FeedSettingsUpdate = {};
@@ -124,6 +129,10 @@ export default function FeedSettingsModal({
 
     if (languageOverride !== currentLanguageOverride) {
       settings.language = languageOverride === '' ? null : languageOverride;
+    }
+
+    if (excludeStrings.trim() !== currentExcludeStrings) {
+      settings.episode_title_exclude_strings = excludeStrings.trim() || null;
     }
 
     if (Object.keys(settings).length === 0) {
@@ -195,7 +204,7 @@ export default function FeedSettingsModal({
               {strategy === 'llm'
                 ? 'Uses AI transcription and classification to detect ads'
                 : strategy === 'chapter'
-                  ? 'Removes chapters matching filter strings (requires chapter metadata). Uses CBR encoding for accurate chapter seeking, instead of the default VBR.'
+                  ? 'Removes chapters matching filter strings. Episodes without chapter metadata fall back to LLM detection. Uses CBR encoding for accurate chapter seeking, instead of the default VBR.'
                   : 'Preserves audio and only inserts chapter metadata into the processed file/output description.'}
             </p>
 
@@ -216,6 +225,24 @@ export default function FeedSettingsModal({
                 </p>
               </div>
             )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Exclude episodes by title
+            </label>
+            <input
+              type="text"
+              value={excludeStrings}
+              onChange={(e) => setExcludeStrings(e.target.value)}
+              placeholder="e.g. Stammtisch,Preview"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Comma-separated list. Episodes whose title contains any of these
+              (case-insensitive) are never auto-whitelisted and are left out of
+              the Podly RSS feed.
+            </p>
           </div>
 
           <div>
