@@ -21,3 +21,7 @@ def post_download_api_path(guid: str) -> str:
 
 def post_stream_path(guid: str) -> str:
     return f"/post/{encode_guid_for_url(guid)}.mp3"
+
+
+def post_transcript_path(guid: str) -> str:
+    return f"/post/{encode_guid_for_url(guid)}/transcript.vtt"

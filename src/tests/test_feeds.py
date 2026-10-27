@@ -1277,8 +1277,10 @@ def test_generate_feed_xml_filters_processed_whitelisted(
             db.session.add_all([processed, unprocessed, not_whitelisted])
             db.session.commit()
 
-            mock_feed_item.side_effect = lambda post, prepend_feed_title=False: (
-                mock.MagicMock(post_guid=post.guid)
+            mock_feed_item.side_effect = (
+                lambda post, prepend_feed_title=False, has_transcript=False: (
+                    mock.MagicMock(post_guid=post.guid)
+                )
             )
             mock_rss = mock_rss_2.return_value
             mock_rss.to_xml.return_value = "<rss></rss>"
@@ -1340,8 +1342,10 @@ def test_generate_feed_xml_includes_all_when_autoprocess_enabled(
             db.session.add_all([processed, unprocessed, not_whitelisted])
             db.session.commit()
 
-            mock_feed_item.side_effect = lambda post, prepend_feed_title=False: (
-                mock.MagicMock(post_guid=post.guid)
+            mock_feed_item.side_effect = (
+                lambda post, prepend_feed_title=False, has_transcript=False: (
+                    mock.MagicMock(post_guid=post.guid)
+                )
             )
             mock_rss = mock_rss_2.return_value
             mock_rss.to_xml.return_value = "<rss></rss>"

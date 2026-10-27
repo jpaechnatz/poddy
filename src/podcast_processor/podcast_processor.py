@@ -562,6 +562,7 @@ class PodcastProcessor:
             job,
             processed_audio_path,
             chapter_data=chapter_data_json,
+            removed_segments=removed_segments_sec,
         )
 
     def _perform_chapter_insertion_only_processing(
@@ -665,6 +666,7 @@ class PodcastProcessor:
             job,
             processed_audio_path,
             chapter_data=chapter_data_json,
+            removed_segments=[],
         )
 
     def _refine_transcript_sourced_chapters(
@@ -893,7 +895,11 @@ class PodcastProcessor:
         }
 
         self._finalize_processing(
-            post, job, processed_audio_path, chapter_data=json.dumps(chapter_data)
+            post,
+            job,
+            processed_audio_path,
+            chapter_data=json.dumps(chapter_data),
+            removed_segments=ad_segments,
         )
 
     def _finalize_processing(
@@ -902,10 +908,15 @@ class PodcastProcessor:
         job: ProcessingJob,
         processed_audio_path: str,
         chapter_data: str | None = None,
+        removed_segments: list[tuple[float, float]] | None = None,
     ) -> None:
         """
         Finalize processing: update database and mark job complete.
+
+        removed_segments are the source windows (seconds) cut from the audio;
+        they are stored so transcript times can be mapped to the output.
         """
+        silence_windows: list[tuple[float, float]] = []
         polish_options = self._polish_options(getattr(post, "feed", None))
         if polish_options.enabled:
             self.status_manager.update_job_status(
@@ -929,6 +940,12 @@ class PodcastProcessor:
         }
         if chapter_data is not None:
             update_data["chapter_data"] = chapter_data
+        update_data["audio_edits"] = json.dumps(
+            {
+                "ads": [[s, e] for s, e in removed_segments or []],
+                "silence": [[s, e] for s, e in silence_windows],
+            }
+        )
         # Feeds and stats read Post.duration as the processed runtime, and not
         # every strategy cuts audio through AudioProcessor, which also stores it.
         processed_duration_ms = get_audio_duration_ms(processed_audio_path)
@@ -1018,6 +1035,8 @@ class PodcastProcessor:
                 "unprocessed_audio_path": None,
                 "duration": post.duration,
                 "chapter_data": None,
+                # The spoken notice shifts all audio; no transcript mapping.
+                "audio_edits": None,
             },
         )
         self._remove_unprocessed_audio(post)

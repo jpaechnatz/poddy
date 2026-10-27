@@ -42,6 +42,7 @@ from app.routes.post_utils import (
     missing_processed_audio_response,
 )
 from app.runtime_config import config as runtime_config
+from app.transcript_vtt import render_post_transcript
 from app.writer.client import writer_client
 from podcast_processor.chapter_filter import parse_filter_strings
 from podcast_processor.transcription_manager import TranscriptionManager
@@ -1266,6 +1267,21 @@ def api_download_original_post(p_guid: str) -> flask.Response:
 @post_bp.route("/post/<path:p_guid>.mp3", methods=["GET"])
 def download_post_legacy(p_guid: str) -> ResponseReturnValue:
     return api_get_post_audio(p_guid)
+
+
+@post_bp.route("/post/<path:p_guid>/transcript.vtt", methods=["GET"])
+def get_post_transcript_vtt(p_guid: str) -> ResponseReturnValue:
+    """Serve the transcript matching the processed audio (podcast:transcript)."""
+    post = Post.query.filter_by(guid=p_guid).first()
+    vtt = render_post_transcript(post) if post is not None else None
+    if vtt is None:
+        return flask.make_response(
+            jsonify({"error": "Transcript not available", "error_code": "NOT_FOUND"}),
+            404,
+        )
+    response = flask.make_response(vtt)
+    response.headers["Content-Type"] = "text/vtt; charset=utf-8"
+    return response
 
 
 @post_bp.route("/post/<path:p_guid>/original.mp3", methods=["GET"])

@@ -16,14 +16,17 @@ from flask import current_app, g, request
 
 from app.episode_filter import is_post_excluded, is_title_excluded
 from app.extensions import db
-from app.guid_urls import post_stream_path
+from app.guid_urls import post_stream_path, post_transcript_path
 from app.models import Feed, Post, User, UserFeed
 from app.runtime_config import config
+from app.transcript_vtt import post_ids_with_transcripts, transcript_ready
 from app.writer.client import writer_client
 from podcast_processor.audio import get_audio_duration_ms
 from podcast_processor.podcast_downloader import find_audio_link
 
 logger = logging.getLogger("global_logger")
+
+PODCAST_NAMESPACE = "https://podcastindex.org/namespace/1.0"
 
 _FORWARDED_PROTO_RE = re.compile(
     r"(?:^|[;,])\s*proto=(\"?)(https?|[A-Za-z]+)\1", re.IGNORECASE
@@ -614,10 +617,14 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
         pubDate: str | None,
         image_url: str | None = None,
         duration_seconds: int | None = None,
+        transcript_url: str | None = None,
+        transcript_language: str | None = None,
         **kwargs: Any,
     ) -> None:
         self.image_url = image_url
         self.duration_seconds = duration_seconds
+        self.transcript_url = transcript_url
+        self.transcript_language = transcript_language
         super().__init__(
             title=title,
             enclosure=enclosure,
@@ -635,6 +642,16 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
             handler.startElement("itunes:duration", {})
             handler.characters(_format_itunes_duration(self.duration_seconds))
             handler.endElement("itunes:duration")
+        if self.transcript_url:
+            attrs = {
+                "url": self.transcript_url,
+                "type": "text/vtt",
+                "rel": "captions",
+            }
+            if self.transcript_language:
+                attrs["language"] = self.transcript_language
+            handler.startElement("podcast:transcript", attrs)
+            handler.endElement("podcast:transcript")
         _publish_cdata_opt_element(handler, "content:encoded", self.description)
         super().publish_extensions(handler)
 
@@ -711,7 +728,11 @@ def _feed_item_duration_seconds(post: Post) -> int | None:
     return duration_seconds if duration_seconds > 0 else None
 
 
-def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem:
+def feed_item(
+    post: Post,
+    prepend_feed_title: bool = False,
+    has_transcript: bool = False,
+) -> PyRSS2Gen.RSSItem:
     """
     Given a post, return the corresponding RSS item. Reference:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
@@ -732,6 +753,15 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
 
     duration_seconds = _feed_item_duration_seconds(post)
 
+    transcript_url = None
+    transcript_language = None
+    if has_transcript and transcript_ready(post):
+        transcript_url = _append_feed_token_params(
+            f"{base_url}{post_transcript_path(post.guid)}"
+        )
+        feed = getattr(post, "feed", None)
+        transcript_language = getattr(feed, "language", None) if feed else None
+
     item = ItunesRSSItem(
         title=title,
         enclosure=PyRSS2Gen.Enclosure(
@@ -744,6 +774,8 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
         pubDate=_format_pub_date(post.release_date),
         image_url=post.image_url,
         duration_seconds=duration_seconds,
+        transcript_url=transcript_url,
+        transcript_language=transcript_language,
     )
 
     return item
@@ -805,8 +837,12 @@ def generate_feed_xml(feed: Feed) -> Any:
             .all()
         )
 
+    posts = [post for post in posts if not is_title_excluded(feed, post.title)]
+    with_transcripts = post_ids_with_transcripts(
+        [post.id for post in posts if transcript_ready(post)]
+    )
     items = [
-        feed_item(post) for post in posts if not is_title_excluded(feed, post.title)
+        feed_item(post, has_transcript=post.id in with_transcripts) for post in posts
     ]
 
     base_url = _get_base_url()
@@ -825,6 +861,7 @@ def generate_feed_xml(feed: Feed) -> Any:
 
     rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
+    rss_feed.rss_attrs["xmlns:podcast"] = PODCAST_NAMESPACE
 
     logger.info(f"XML generated for feed with ID: {feed.id}")
     return rss_feed.to_xml("utf-8")
@@ -836,11 +873,19 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
     user_id = user.id if user else 0
     logger.info(f"Generating aggregate feed XML for: {username}")
 
-    posts = get_user_aggregate_posts(user_id)
+    posts = [
+        post for post in get_user_aggregate_posts(user_id) if not is_post_excluded(post)
+    ]
+    with_transcripts = post_ids_with_transcripts(
+        [post.id for post in posts if transcript_ready(post)]
+    )
     items = [
-        feed_item(post, prepend_feed_title=True)
+        feed_item(
+            post,
+            prepend_feed_title=True,
+            has_transcript=post.id in with_transcripts,
+        )
         for post in posts
-        if not is_post_excluded(post)
     ]
 
     base_url = _get_base_url()
@@ -872,6 +917,7 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
 
     rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
+    rss_feed.rss_attrs["xmlns:podcast"] = PODCAST_NAMESPACE
 
     logger.info(f"Aggregate XML generated for: {username}")
     return rss_feed.to_xml("utf-8")
