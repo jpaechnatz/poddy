@@ -20,6 +20,7 @@ from podcast_processor.audio import (
     get_audio_duration_ms,
     prepend_clip,
 )
+from podcast_processor.audio_polish import PolishOptions, polish_audio
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.chapter_ad_detector import (
     ChapterAdDetector,
@@ -33,10 +34,13 @@ from podcast_processor.chapter_fallback import (
     resolve_llm_path_chapters,
 )
 from podcast_processor.chapter_filter import parse_filter_strings
+from podcast_processor.chapter_reader import Chapter, read_chapters
 from podcast_processor.chapter_writer import (
     recalculate_chapter_times,
     write_adjusted_chapters,
 )
+from podcast_processor.episode_extras import ExtrasOptions, summarize_transcript
+from podcast_processor.id3_metadata import copy_id3_metadata
 from podcast_processor.podcast_downloader import PodcastDownloader, sanitize_title
 from podcast_processor.processing_status_manager import ProcessingStatusManager
 from podcast_processor.prompt import (
@@ -192,6 +196,10 @@ class PodcastProcessor:
                 ad_detection_strategy=cached_ad_detection_strategy,
             )
         )
+        # Read now: finalize runs after process_audio expired the post, and a
+        # lazy post.feed load there would fail on a rolled-back session.
+        cached_polish_options = self._polish_options(getattr(post, "feed", None))
+        cached_extras = ExtrasOptions.from_feed(getattr(post, "feed", None))
 
         try:
             self.logger.debug(
@@ -272,6 +280,8 @@ class PodcastProcessor:
                     cached_ad_detection_strategy,
                     cached_chapter_filter_strings,
                     cached_enable_llm_chapter_fallback_tagging,
+                    polish_options=cached_polish_options,
+                    extras=cached_extras,
                 )
 
                 self.logger.info(f"Processing podcast: {post} complete")
@@ -375,6 +385,9 @@ class PodcastProcessor:
         ad_detection_strategy: str = "llm",
         chapter_filter_strings: str | None = None,
         enable_llm_chapter_fallback_tagging: bool | None = None,
+        *,
+        polish_options: PolishOptions | None = None,
+        extras: ExtrasOptions | None = None,
     ) -> None:
         """
         Perform the main processing steps based on the ad detection strategy.
@@ -389,11 +402,23 @@ class PodcastProcessor:
         """
         if ad_detection_strategy == "chapter":
             self._perform_chapter_based_processing(
-                post, job, processed_audio_path, cancel_callback, chapter_filter_strings
+                post,
+                job,
+                processed_audio_path,
+                cancel_callback,
+                chapter_filter_strings,
+                enable_llm_chapter_fallback_tagging,
+                polish_options=polish_options,
+                extras=extras,
             )
         elif ad_detection_strategy == "chapter_insert":
             self._perform_chapter_insertion_only_processing(
-                post, job, processed_audio_path, cancel_callback
+                post,
+                job,
+                processed_audio_path,
+                cancel_callback,
+                polish_options=polish_options,
+                extras=extras,
             )
         else:
             self._perform_llm_based_processing(
@@ -402,6 +427,8 @@ class PodcastProcessor:
                 processed_audio_path,
                 cancel_callback,
                 enable_llm_chapter_fallback_tagging,
+                polish_options=polish_options,
+                extras=extras,
             )
 
     def _resolve_llm_chapter_fallback_tagging_enabled(
@@ -430,6 +457,9 @@ class PodcastProcessor:
         processed_audio_path: str,
         cancel_callback: Callable[[], bool] | None = None,
         enable_llm_chapter_fallback_tagging: bool | None = None,
+        *,
+        polish_options: PolishOptions | None = None,
+        extras: ExtrasOptions | None = None,
     ) -> None:
         """
         Perform LLM-based ad detection: transcription, classification, and audio processing.
@@ -464,12 +494,14 @@ class PodcastProcessor:
         self.status_manager.update_job_status(
             job, "running", 4, "Processing audio", 90.0
         )
-        removed_segments_ms = self.audio_processor.process_audio(
-            post, processed_audio_path
-        )
+        cut = self.audio_processor.process_audio(post, processed_audio_path)
+        # Ad windows decide what counts as ad content; removed windows (narrower,
+        # fades keep the ad edges) decide how far later timestamps move.
+        ad_windows_ms = cut.ad_windows_ms
+        ad_windows_sec = [(s / 1000.0, e / 1000.0) for s, e in ad_windows_ms]
         removed_segments_sec = [
             (start_ms / 1000.0, end_ms / 1000.0)
-            for start_ms, end_ms in removed_segments_ms
+            for start_ms, end_ms in cut.removed_windows_ms
         ]
 
         chapters_for_output = []
@@ -491,7 +523,7 @@ class PodcastProcessor:
             if chapter_source == "transcript" and chapters_for_output:
                 transcript_segments_for_chapters = (
                     self._filter_transcript_segments_for_chapters(
-                        transcript_segments, removed_segments_ms
+                        transcript_segments, ad_windows_ms
                     )
                 )
                 if not transcript_segments_for_chapters:
@@ -513,6 +545,18 @@ class PodcastProcessor:
                     len(chapters_for_output),
                     chapter_source,
                 )
+        elif unprocessed_audio_path:
+            # ffmpeg copies the source CHAP frames into the cut file with their
+            # original times, so later chapters would point past removed ads.
+            # Rewrite them with adjusted times even without fallback tagging.
+            embedded_chapters = read_chapters(unprocessed_audio_path)
+            if embedded_chapters:
+                write_adjusted_chapters(
+                    audio_path=processed_audio_path,
+                    chapters_to_keep=embedded_chapters,
+                    removed_segments=removed_segments_sec,
+                    drop_windows=ad_windows_sec,
+                )
 
         chapter_data_json: str | None = None
         if chapters_for_output:
@@ -520,9 +564,10 @@ class PodcastProcessor:
                 audio_path=processed_audio_path,
                 chapters_to_keep=chapters_for_output,
                 removed_segments=removed_segments_sec,
+                drop_windows=ad_windows_sec,
             )
             adjusted_chapters = recalculate_chapter_times(
-                chapters_for_output, removed_segments_sec
+                chapters_for_output, removed_segments_sec, ad_windows_sec
             )
             chapter_data_json = json.dumps(
                 {
@@ -543,6 +588,10 @@ class PodcastProcessor:
             job,
             processed_audio_path,
             chapter_data=chapter_data_json,
+            removed_segments=removed_segments_sec,
+            polish_options=polish_options,
+            source_audio_path=unprocessed_audio_path,
+            extras=extras,
         )
 
     def _perform_chapter_insertion_only_processing(
@@ -551,6 +600,9 @@ class PodcastProcessor:
         job: ProcessingJob,
         processed_audio_path: str,
         cancel_callback: Callable[[], bool] | None = None,
+        *,
+        polish_options: PolishOptions | None = None,
+        extras: ExtrasOptions | None = None,
     ) -> None:
         """
         Resolve and write chapters without ad detection or ad removal.
@@ -615,6 +667,9 @@ class PodcastProcessor:
                 post_id=post.id,
             )
 
+        if extras is not None and extras.needs_transcript and not transcript_segments:
+            self._transcribe_for_extras(post, job, extras)
+
         self.status_manager.update_job_status(
             job, "running", 4, "Copying audio and writing chapters", 90.0
         )
@@ -646,6 +701,10 @@ class PodcastProcessor:
             job,
             processed_audio_path,
             chapter_data=chapter_data_json,
+            removed_segments=[],
+            polish_options=polish_options,
+            source_audio_path=unprocessed_audio_path,
+            extras=extras,
         )
 
     def _refine_transcript_sourced_chapters(
@@ -768,10 +827,15 @@ class PodcastProcessor:
         processed_audio_path: str,
         cancel_callback: Callable[[], bool] | None = None,
         chapter_filter_strings: str | None = None,
+        enable_llm_chapter_fallback_tagging: bool | None = None,
+        *,
+        polish_options: PolishOptions | None = None,
+        extras: ExtrasOptions | None = None,
     ) -> None:
         """
         Perform chapter-based ad detection: read chapters, filter by title, remove ads.
-        Skips transcription and LLM classification.
+        Skips transcription and LLM classification. Episodes without embedded
+        chapters fall back to LLM ad detection.
         """
         from shared import defaults as DEFAULTS
 
@@ -785,13 +849,29 @@ class PodcastProcessor:
         filter_strings = parse_filter_strings(filter_csv)
 
         detector = ChapterAdDetector(filter_strings=filter_strings, logger=self.logger)
+        source_audio_path = str(post.unprocessed_audio_path)
 
         try:
             ad_segments, chapters_to_keep, chapters_to_remove = detector.detect(
-                str(post.unprocessed_audio_path)
+                source_audio_path
             )
         except ChapterDetectionError as e:
-            raise ProcessorException(str(e)) from e
+            self.logger.warning(
+                "Chapter-based detection unavailable for post %s (%s); "
+                "falling back to LLM ad detection",
+                post.id,
+                e,
+            )
+            self._perform_llm_based_processing(
+                post,
+                job,
+                processed_audio_path,
+                cancel_callback,
+                enable_llm_chapter_fallback_tagging,
+                polish_options=polish_options,
+                extras=extras,
+            )
+            return
 
         self._raise_if_cancelled(job, 2, cancel_callback)
 
@@ -812,12 +892,12 @@ class PodcastProcessor:
         if ad_segments_ms:
             clip_segments_exact(
                 ad_segments_ms=ad_segments_ms,
-                in_path=str(post.unprocessed_audio_path),
+                in_path=source_audio_path,
                 out_path=processed_audio_path,
             )
         else:
             # No ads found, copy the original file
-            shutil.copyfile(str(post.unprocessed_audio_path), processed_audio_path)
+            shutil.copyfile(source_audio_path, processed_audio_path)
 
         # Write adjusted chapters to the processed file
         write_adjusted_chapters(
@@ -825,6 +905,9 @@ class PodcastProcessor:
             chapters_to_keep=chapters_to_keep,
             removed_segments=ad_segments,
         )
+
+        if extras is not None and extras.needs_transcript:
+            self._transcribe_for_extras(post, job, extras)
 
         # Build chapter data for stats
         adjusted_kept_chapters = recalculate_chapter_times(
@@ -859,7 +942,14 @@ class PodcastProcessor:
         }
 
         self._finalize_processing(
-            post, job, processed_audio_path, chapter_data=json.dumps(chapter_data)
+            post,
+            job,
+            processed_audio_path,
+            chapter_data=json.dumps(chapter_data),
+            removed_segments=ad_segments,
+            polish_options=polish_options,
+            source_audio_path=source_audio_path,
+            extras=extras,
         )
 
     def _finalize_processing(
@@ -868,10 +958,38 @@ class PodcastProcessor:
         job: ProcessingJob,
         processed_audio_path: str,
         chapter_data: str | None = None,
+        removed_segments: list[tuple[float, float]] | None = None,
+        polish_options: PolishOptions | None = None,
+        source_audio_path: str | None = None,
+        extras: ExtrasOptions | None = None,
     ) -> None:
         """
         Finalize processing: update database and mark job complete.
+
+        removed_segments are the source windows (seconds) cut from the audio;
+        they are stored so transcript times can be mapped to the output.
+        polish_options and source_audio_path are read by the caller before
+        audio processing, so finalize never lazy-loads ORM state.
         """
+        silence_windows: list[tuple[float, float]] = []
+        polish_options = polish_options or PolishOptions()
+        if polish_options.enabled:
+            self.status_manager.update_job_status(
+                job, "running", 4, "Polishing audio", 95.0
+            )
+            silence_windows = polish_audio(processed_audio_path, polish_options)
+            if silence_windows and chapter_data is not None:
+                chapter_data = _shift_chapter_data(chapter_data, silence_windows)
+
+        unprocessed_audio_path = source_audio_path or post.unprocessed_audio_path
+        if unprocessed_audio_path and os.path.exists(str(unprocessed_audio_path)):
+            # Restore cover art, comments and links that ffmpeg drops.
+            copy_id3_metadata(
+                str(unprocessed_audio_path),
+                processed_audio_path,
+                skip_loudness_frames=polish_options.normalize_loudness,
+            )
+
         # Update the database with the processed audio path
         self._remove_unprocessed_audio(post)
         update_data: dict[str, Any] = {
@@ -881,6 +999,21 @@ class PodcastProcessor:
         }
         if chapter_data is not None:
             update_data["chapter_data"] = chapter_data
+        if extras is not None and extras.generate_summary:
+            self.status_manager.update_job_status(
+                job, "running", 4, "Writing episode summary", 97.0
+            )
+            summary = self._summary_for_post(
+                int(post.id), list(removed_segments or []), extras.language
+            )
+            if summary:
+                update_data["summary"] = summary
+        update_data["audio_edits"] = json.dumps(
+            {
+                "ads": [[s, e] for s, e in removed_segments or []],
+                "silence": [[s, e] for s, e in silence_windows],
+            }
+        )
         # Feeds and stats read Post.duration as the processed runtime, and not
         # every strategy cuts audio through AudioProcessor, which also stores it.
         processed_duration_ms = get_audio_duration_ms(processed_audio_path)
@@ -899,6 +1032,53 @@ class PodcastProcessor:
         # Mark job complete
         self.status_manager.update_job_status(
             job, "completed", 4, "Processing complete", 100.0
+        )
+
+    def _transcribe_for_extras(
+        self, post: Post, job: ProcessingJob, extras: ExtrasOptions
+    ) -> None:
+        """Transcribe for transcript/summary extras; failures do not fail the run."""
+        self.status_manager.update_job_status(
+            job, "running", 4, "Transcribing for transcript and summary", 92.0
+        )
+        try:
+            self.transcription_manager.transcribe(post, language=extras.language)
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(
+                "Transcription for extras failed for post %s: %s", post.id, e
+            )
+
+    def _summary_for_post(
+        self,
+        post_id: int,
+        removed_segments: list[tuple[float, float]],
+        language: str | None,
+    ) -> str | None:
+        segments = (
+            self.db_session.query(TranscriptSegment)
+            .filter_by(post_id=post_id)
+            .order_by(TranscriptSegment.sequence_num)
+            .all()
+        )
+        if not segments:
+            return None
+        return summarize_transcript(
+            segments,
+            removed_segments,
+            llm_model=getattr(self.config, "llm_model", None),
+            llm_api_key=getattr(self.config, "llm_api_key", None),
+            openai_base_url=getattr(self.config, "openai_base_url", None),
+            timeout_sec=int(getattr(self.config, "openai_timeout", 300)),
+            language=language,
+        )
+
+    @staticmethod
+    def _polish_options(feed: Any | None) -> PolishOptions:
+        if feed is None:
+            return PolishOptions()
+        return PolishOptions(
+            trim_silence=bool(getattr(feed, "trim_silence", False)),
+            normalize_loudness=bool(getattr(feed, "normalize_loudness", False)),
         )
 
     def _publish_without_ad_removal(
@@ -961,6 +1141,8 @@ class PodcastProcessor:
                 "unprocessed_audio_path": None,
                 "duration": post.duration,
                 "chapter_data": None,
+                # The spoken notice shifts all audio; no transcript mapping.
+                "audio_edits": None,
             },
         )
         self._remove_unprocessed_audio(post)
@@ -1316,3 +1498,36 @@ class PodcastProcessor:
 
 class ProcessorException(Exception):
     """Exception raised for podcast processing errors."""
+
+
+def _shift_chapter_data(
+    chapter_data: str, removed_windows: list[tuple[float, float]]
+) -> str:
+    """Move chapter_data output times past audio removed after it was built."""
+    try:
+        data = json.loads(chapter_data)
+        entries = data.get("chapters_for_output")
+    except (ValueError, AttributeError):
+        return chapter_data
+    if not isinstance(entries, list):
+        return chapter_data
+
+    chapters = [
+        Chapter(
+            element_id=str(index),
+            title=str(entry.get("title", "")),
+            start_time_ms=round(float(entry.get("start_time", 0.0)) * 1000),
+            end_time_ms=round(float(entry.get("end_time", 0.0)) * 1000),
+        )
+        for index, entry in enumerate(entries)
+        if isinstance(entry, dict)
+    ]
+    data["chapters_for_output"] = [
+        {
+            "title": ch.title,
+            "start_time": round(ch.start_time_ms / 1000.0, 1),
+            "end_time": round(ch.end_time_ms / 1000.0, 1),
+        }
+        for ch in recalculate_chapter_times(chapters, removed_windows)
+    ]
+    return json.dumps(data)

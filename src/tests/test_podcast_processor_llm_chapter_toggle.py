@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.models import Post, ProcessingJob
+from podcast_processor.audio_processor import AudioCutResult
 from podcast_processor.chapter_reader import Chapter
 from podcast_processor.podcast_processor import PodcastProcessor
 from shared.test_utils import create_standard_test_config
@@ -19,7 +20,9 @@ def test_llm_chapter_fallback_tagging_disabled_skips_resolver_and_writer() -> No
     transcription_manager.transcribe.return_value = transcript_segments
 
     audio_processor = MagicMock()
-    audio_processor.process_audio.return_value = [(1000, 2000)]
+    audio_processor.process_audio.return_value = AudioCutResult(
+        [(1000, 2000)], [(1000, 2000)]
+    )
 
     status_manager = MagicMock()
 
@@ -82,7 +85,7 @@ def test_llm_description_chapters_skip_word_refiner_and_write_unmodified() -> No
     transcription_manager.transcribe.return_value = transcript_segments
 
     audio_processor = MagicMock()
-    audio_processor.process_audio.return_value = []
+    audio_processor.process_audio.return_value = AudioCutResult([], [])
 
     status_manager = MagicMock()
 
@@ -151,7 +154,9 @@ def test_llm_transcript_chapters_exclude_removed_ad_overlap_segments() -> None:
     transcription_manager.transcribe.return_value = transcript_segments
 
     audio_processor = MagicMock()
-    audio_processor.process_audio.return_value = [(10_000, 20_000)]
+    audio_processor.process_audio.return_value = AudioCutResult(
+        [(10_000, 20_000)], [(10_000, 20_000)]
+    )
 
     status_manager = MagicMock()
 
@@ -284,7 +289,9 @@ def test_llm_embedded_chapters_adjust_each_marker_by_prior_removed_audio() -> No
     ]
 
     audio_processor = MagicMock()
-    audio_processor.process_audio.return_value = [(10_000, 20_000), (50_000, 70_000)]
+    audio_processor.process_audio.return_value = AudioCutResult(
+        [(10_000, 20_000), (50_000, 70_000)], [(10_000, 20_000), (50_000, 70_000)]
+    )
 
     processor = object.__new__(PodcastProcessor)
     processor.config = config
@@ -368,6 +375,8 @@ def test_processing_steps_routes_chapter_insert_strategy() -> None:
         job,
         "/tmp/output.mp3",
         None,
+        polish_options=None,
+        extras=None,
     )
     processor._perform_chapter_based_processing.assert_not_called()
     processor._perform_llm_based_processing.assert_not_called()

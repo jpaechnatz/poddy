@@ -50,6 +50,19 @@ export default function FeedSettingsModal({
         : 'inherit'
   );
   const [languageOverride, setLanguageOverride] = useState(feed.language ?? '');
+  const [excludeStrings, setExcludeStrings] = useState(
+    feed.episode_title_exclude_strings ?? ''
+  );
+  const [trimSilence, setTrimSilence] = useState(feed.trim_silence === true);
+  const [normalizeLoudness, setNormalizeLoudness] = useState(
+    feed.normalize_loudness === true
+  );
+  const [alwaysTranscribe, setAlwaysTranscribe] = useState(
+    feed.always_transcribe === true
+  );
+  const [generateSummary, setGenerateSummary] = useState(
+    feed.generate_summary === true
+  );
 
   useEffect(() => {
     setStrategy(feed.ad_detection_strategy || 'llm');
@@ -69,6 +82,11 @@ export default function FeedSettingsModal({
           : 'inherit'
     );
     setLanguageOverride(feed.language ?? '');
+    setExcludeStrings(feed.episode_title_exclude_strings ?? '');
+    setTrimSilence(feed.trim_silence === true);
+    setNormalizeLoudness(feed.normalize_loudness === true);
+    setAlwaysTranscribe(feed.always_transcribe === true);
+    setGenerateSummary(feed.generate_summary === true);
   }, [feed, llmChapterFallbackGlobalDefault]);
 
   const updateMutation = useMutation({
@@ -95,6 +113,7 @@ export default function FeedSettingsModal({
         ? 'off'
         : 'inherit';
   const currentLanguageOverride = feed.language ?? '';
+  const currentExcludeStrings = feed.episode_title_exclude_strings ?? '';
 
   const handleSave = () => {
     const settings: FeedSettingsUpdate = {};
@@ -124,6 +143,26 @@ export default function FeedSettingsModal({
 
     if (languageOverride !== currentLanguageOverride) {
       settings.language = languageOverride === '' ? null : languageOverride;
+    }
+
+    if (excludeStrings.trim() !== currentExcludeStrings) {
+      settings.episode_title_exclude_strings = excludeStrings.trim() || null;
+    }
+
+    if (trimSilence !== (feed.trim_silence === true)) {
+      settings.trim_silence = trimSilence;
+    }
+
+    if (normalizeLoudness !== (feed.normalize_loudness === true)) {
+      settings.normalize_loudness = normalizeLoudness;
+    }
+
+    if (alwaysTranscribe !== (feed.always_transcribe === true)) {
+      settings.always_transcribe = alwaysTranscribe;
+    }
+
+    if (generateSummary !== (feed.generate_summary === true)) {
+      settings.generate_summary = generateSummary;
     }
 
     if (Object.keys(settings).length === 0) {
@@ -195,7 +234,7 @@ export default function FeedSettingsModal({
               {strategy === 'llm'
                 ? 'Uses AI transcription and classification to detect ads'
                 : strategy === 'chapter'
-                  ? 'Removes chapters matching filter strings (requires chapter metadata). Uses CBR encoding for accurate chapter seeking, instead of the default VBR.'
+                  ? 'Removes chapters matching filter strings. Episodes without chapter metadata fall back to LLM detection. Uses CBR encoding for accurate chapter seeking, instead of the default VBR.'
                   : 'Preserves audio and only inserts chapter metadata into the processed file/output description.'}
             </p>
 
@@ -216,6 +255,24 @@ export default function FeedSettingsModal({
                 </p>
               </div>
             )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Exclude episodes by title
+            </label>
+            <input
+              type="text"
+              value={excludeStrings}
+              onChange={(e) => setExcludeStrings(e.target.value)}
+              placeholder="e.g. Stammtisch,Preview"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Comma-separated list. Episodes whose title contains any of these
+              (case-insensitive) are never auto-whitelisted and are left out of
+              the Podly RSS feed.
+            </p>
           </div>
 
           <div>
@@ -292,6 +349,62 @@ export default function FeedSettingsModal({
                 this setting is locked on.
               </p>
             )}
+          </div>
+
+          <div>
+            <span className="block text-sm font-medium text-gray-700 mb-2">
+              Audio polishing
+            </span>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={trimSilence}
+                onChange={(e) => setTrimSilence(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Shorten long silences
+            </label>
+            <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={normalizeLoudness}
+                onChange={(e) => setNormalizeLoudness(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Normalize loudness (-16 LUFS)
+            </label>
+            <p className="text-xs text-gray-500 mt-1">
+              Applies to newly processed episodes. Pauses longer than 2 seconds
+              are shortened; chapters are moved to match.
+            </p>
+          </div>
+
+          <div>
+            <span className="block text-sm font-medium text-gray-700 mb-2">
+              Extras
+            </span>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={alwaysTranscribe}
+                onChange={(e) => setAlwaysTranscribe(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Always transcribe (publish transcript in every mode)
+            </label>
+            <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={generateSummary}
+                onChange={(e) => setGenerateSummary(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              AI summary in the episode description
+            </label>
+            <p className="text-xs text-gray-500 mt-1">
+              Chapter-based modes normally skip transcription; these options add
+              transcription (and LLM) cost per episode.
+            </p>
           </div>
 
           <div className="border-t border-gray-200" />

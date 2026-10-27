@@ -6,12 +6,33 @@ from pathlib import Path
 from typing import Any
 
 from groq import Groq
-from openai import OpenAI
+from groq import Omit as GroqOmit
+from groq import omit as groq_omit
+from openai import Omit, OpenAI, omit
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
 
 from podcast_processor.audio import split_audio
 from shared.config import GroqWhisperConfig, RemoteWhisperConfig
+
+# Language value that lets the transcription model detect the language itself
+# (per request/chunk). Useful for episodes with clips in other languages.
+AUTO_LANGUAGE = "auto"
+
+
+def explicit_language(language: str | None) -> str | None:
+    """The language to send, or None to let the model detect it."""
+    if not language or language.strip().lower() == AUTO_LANGUAGE:
+        return None
+    return language
+
+
+def _openai_language(language: str | None) -> str | Omit:
+    return explicit_language(language) or omit
+
+
+def _groq_language(language: str | None) -> str | GroqOmit:
+    return explicit_language(language) or groq_omit
 
 
 class Segment(BaseModel):
@@ -101,7 +122,11 @@ class LocalWhisperTranscriber(Transcriber):
 
         self.logger.info("Beginning transcription")
         start = time.time()
-        result = model.transcribe(audio_file_path, fp16=False, language=language)
+        result = model.transcribe(
+            audio_file_path,
+            fp16=False,
+            language=explicit_language(language),
+        )
         end = time.time()
         elapsed = end - start
         self.logger.info(f"Transcription completed in {elapsed}")
@@ -202,8 +227,8 @@ class OpenAIWhisperTranscriber(Transcriber):
                 model=self.config.model,
                 file=f,
                 timestamp_granularities=["segment"],
-                language=language,
                 response_format="verbose_json",
+                language=_openai_language(language),
             )
 
             self.logger.debug("Got transcription")
@@ -313,7 +338,7 @@ class GroqWhisperTranscriber(Transcriber):
                     file=Path(chunk_path),
                     model=self.config.model,
                     response_format="verbose_json",  # Ensure segments are included
-                    language=language,
+                    language=_groq_language(language),
                 )
             except Exception as exc:
                 self.logger.warning(

@@ -14,6 +14,7 @@ logger = logging.getLogger("global_logger")
 def recalculate_chapter_times(
     chapters: list[Chapter],
     removed_segments: list[tuple[float, float]],
+    drop_windows: list[tuple[float, float]] | None = None,
 ) -> list[Chapter]:
     """
     Adjust chapter timestamps after ad segment removal.
@@ -31,7 +32,7 @@ def recalculate_chapter_times(
     if not chapters:
         return []
 
-    if not removed_segments:
+    if not removed_segments and not drop_windows:
         return chapters
 
     # Normalize removed segments to sorted, non-overlapping millisecond windows so
@@ -54,12 +55,21 @@ def recalculate_chapter_times(
         new_start_ms = max(0, chapter_start_ms - start_offset_ms)
         new_end_ms = max(new_start_ms, chapter_end_ms - end_offset_ms)
 
+        # Also drop chapters lying inside an ad window whose faded edges stay.
+        if (
+            new_end_ms <= new_start_ms and chapter_end_ms > chapter_start_ms
+        ) or _inside_any(chapter_start_ms, chapter_end_ms, drop_windows):
+            # The whole chapter sat inside removed audio (e.g. an ad chapter).
+            logger.debug("Dropping chapter '%s' removed with the audio", chapter.title)
+            continue
+
         adjusted_chapters.append(
             Chapter(
                 element_id=chapter.element_id,
                 title=chapter.title,
                 start_time_ms=new_start_ms,
                 end_time_ms=new_end_ms,
+                sub_frames=chapter.sub_frames,
             )
         )
 
@@ -72,6 +82,15 @@ def recalculate_chapter_times(
         )
 
     return adjusted_chapters
+
+
+def _inside_any(
+    start_ms: int, end_ms: int, windows: list[tuple[float, float]] | None
+) -> bool:
+    return any(
+        round(w_start * 1000) <= start_ms and end_ms <= round(w_end * 1000)
+        for w_start, w_end in windows or []
+    )
 
 
 def _normalize_removed_segments_ms(
@@ -132,7 +151,7 @@ def write_chapters(
         chapters: List of Chapter objects to write
     """
     if not chapters:
-        logger.info("No chapters to write to %s", audio_path)
+        _remove_chapter_frames(audio_path)
         return
 
     # Sort chapters by start time to ensure correct order
@@ -169,7 +188,7 @@ def write_chapters(
                 end_time=chapter.end_time_ms,
                 start_offset=0xFFFFFFFF,  # Not used
                 end_offset=0xFFFFFFFF,  # Not used
-                sub_frames=[tit2],
+                sub_frames=[tit2, *chapter.sub_frames],
             )
             tags.add(chap)
 
@@ -192,10 +211,30 @@ def write_chapters(
         raise
 
 
+def _remove_chapter_frames(audio_path: str) -> None:
+    """Drop CHAP/CTOC frames, e.g. stale ones ffmpeg copied during a cut."""
+    try:
+        audio = MP3(audio_path)
+    except Exception as e:  # noqa: BLE001
+        logger.info("No chapters to write to %s (%s)", audio_path, e)
+        return
+    tags = audio.tags
+    if tags is None:
+        return
+    keys = [key for key in tags.keys() if key.startswith(("CHAP", "CTOC"))]
+    if not keys:
+        return
+    for key in keys:
+        del tags[key]
+    audio.save()
+    logger.info("Removed %d stale chapter frames from %s", len(keys), audio_path)
+
+
 def write_adjusted_chapters(
     audio_path: str,
     chapters_to_keep: list[Chapter],
     removed_segments: list[tuple[float, float]],
+    drop_windows: list[tuple[float, float]] | None = None,
 ) -> None:
     """
     Write chapters to an MP3 file with timestamps adjusted for removed segments.
@@ -207,5 +246,7 @@ def write_adjusted_chapters(
         chapters_to_keep: List of chapters that were not removed as ads
         removed_segments: List of (start_sec, end_sec) tuples that were removed
     """
-    adjusted_chapters = recalculate_chapter_times(chapters_to_keep, removed_segments)
+    adjusted_chapters = recalculate_chapter_times(
+        chapters_to_keep, removed_segments, drop_windows
+    )
     write_chapters(audio_path, adjusted_chapters)

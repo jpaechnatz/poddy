@@ -17,6 +17,8 @@ VALID_WHISPER_LANGUAGES = frozenset(
         "ru",
         "es",
         "sv",
+        # Let the model detect the language (per transcription chunk).
+        "auto",
     }
 )
 VALID_WHISPER_LANGUAGES_STR = ", ".join(sorted(VALID_WHISPER_LANGUAGES))

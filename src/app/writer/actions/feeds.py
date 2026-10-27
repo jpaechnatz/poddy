@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import func
 
+from app.episode_filter import is_title_excluded
 from app.extensions import db
 from app.jobs_manager_run_service import recalculate_run_counts
 from app.models import (
@@ -230,11 +231,15 @@ def whitelist_latest_post_for_feed_action(params: dict[str, Any]) -> dict[str, A
     if not feed_id:
         raise ValueError("feed_id is required")
 
-    latest = (
+    feed = db.session.get(Feed, int(feed_id))
+    candidates = (
         Post.query.filter_by(feed_id=int(feed_id))
         .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-        .first()
+        .limit(50)
+        .all()
     )
+    # Skip episodes the feed's title filter excludes (e.g. "Stammtisch").
+    latest = next((p for p in candidates if not is_title_excluded(feed, p.title)), None)
     if not latest:
         return {"updated": False}
     if latest.whitelisted:
@@ -243,6 +248,34 @@ def whitelist_latest_post_for_feed_action(params: dict[str, Any]) -> dict[str, A
     latest.whitelisted = True
     db.session.flush()
     return {"updated": True, "post_guid": latest.guid}
+
+
+def unwhitelist_excluded_posts_action(params: dict[str, Any]) -> dict[str, Any]:
+    """Un-whitelist unprocessed posts that the feed's title filter excludes.
+
+    Without this, the episodes whitelisted when the feed was added (before a
+    filter could be set) would still be downloaded, transcribed and sent to
+    the LLM.
+    """
+    feed_id = params.get("feed_id")
+    if not feed_id:
+        raise ValueError("feed_id is required")
+    feed = db.session.get(Feed, int(feed_id))
+    if feed is None:
+        return {"updated_count": 0}
+
+    candidates = Post.query.filter(
+        Post.feed_id == feed.id,
+        Post.whitelisted.is_(True),
+        Post.processed_audio_path.is_(None),
+    ).all()
+    updated = 0
+    for post in candidates:
+        if is_title_excluded(feed, post.title):
+            post.whitelisted = False
+            updated += 1
+    db.session.flush()
+    return {"updated_count": updated}
 
 
 def toggle_whitelist_all_for_feed_action(params: dict[str, Any]) -> dict[str, Any]:

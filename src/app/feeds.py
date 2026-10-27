@@ -14,15 +14,20 @@ import feedparser
 import PyRSS2Gen
 from flask import current_app, g, request
 
+from app.chapters_json import CHAPTERS_MIME_TYPE, processed_chapters
+from app.episode_filter import is_post_excluded, is_title_excluded
 from app.extensions import db
-from app.guid_urls import post_stream_path
+from app.guid_urls import post_chapters_path, post_stream_path, post_transcript_path
 from app.models import Feed, Post, User, UserFeed
 from app.runtime_config import config
+from app.transcript_vtt import post_ids_with_transcripts, transcript_ready
 from app.writer.client import writer_client
 from podcast_processor.audio import get_audio_duration_ms
 from podcast_processor.podcast_downloader import find_audio_link
 
 logger = logging.getLogger("global_logger")
+
+PODCAST_NAMESPACE = "https://podcastindex.org/namespace/1.0"
 
 _FORWARDED_PROTO_RE = re.compile(
     r"(?:^|[;,])\s*proto=(\"?)(https?|[A-Za-z]+)\1", re.IGNORECASE
@@ -157,9 +162,28 @@ def _normalize_feed_text(value: str | None) -> str:
     return value.translate(_FEED_TEXT_NORMALIZE_TABLE)
 
 
+def _render_summary_html(post: Post) -> str:
+    summary = str(getattr(post, "summary", None) or "").strip()
+    if not summary:
+        return ""
+    paragraphs: list[str] = []
+    bullets: list[str] = []
+    for raw_line in summary.splitlines():
+        line = raw_line.strip()
+        if line.startswith(("- ", "* ", "• ")):
+            bullets.append(f"<li>{html.escape(line[2:].strip())}</li>")
+        elif line:
+            paragraphs.append(f"<p>{html.escape(line)}</p>")
+    bullet_html = f"<ul>{''.join(bullets)}</ul>" if bullets else ""
+    return "<p><strong>Podly Summary</strong></p>" + "".join(paragraphs) + bullet_html
+
+
 def build_post_feed_description_html(post: Post) -> str:
     """Build the description shown in Podly-generated RSS items for a post."""
     description_parts: list[str] = []
+    summary_html = _render_summary_html(post)
+    if summary_html:
+        description_parts.append(summary_html)
     if post.description:
         description_parts.append(_normalize_feed_text(post.description))
 
@@ -362,6 +386,9 @@ def fetch_feed(url: str) -> feedparser.FeedParserDict:
 def _should_whitelist_new_post(
     feed: Feed, post: Post, floor_date: datetime.date | None
 ) -> bool:
+    if is_title_excluded(feed, post.title):
+        logger.info("not whitelisting post excluded by title filter: %s", post.title)
+        return False
     if floor_date is not None and post.release_date is None:
         logger.debug(
             "skipping post without release_date for existing feed: %s",
@@ -610,10 +637,16 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
         pubDate: str | None,
         image_url: str | None = None,
         duration_seconds: int | None = None,
+        transcript_url: str | None = None,
+        transcript_language: str | None = None,
+        chapters_url: str | None = None,
         **kwargs: Any,
     ) -> None:
         self.image_url = image_url
         self.duration_seconds = duration_seconds
+        self.transcript_url = transcript_url
+        self.transcript_language = transcript_language
+        self.chapters_url = chapters_url
         super().__init__(
             title=title,
             enclosure=enclosure,
@@ -631,6 +664,22 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
             handler.startElement("itunes:duration", {})
             handler.characters(_format_itunes_duration(self.duration_seconds))
             handler.endElement("itunes:duration")
+        if self.transcript_url:
+            attrs = {
+                "url": self.transcript_url,
+                "type": "text/vtt",
+                "rel": "captions",
+            }
+            if self.transcript_language:
+                attrs["language"] = self.transcript_language
+            handler.startElement("podcast:transcript", attrs)
+            handler.endElement("podcast:transcript")
+        if self.chapters_url:
+            handler.startElement(
+                "podcast:chapters",
+                {"url": self.chapters_url, "type": CHAPTERS_MIME_TYPE},
+            )
+            handler.endElement("podcast:chapters")
         _publish_cdata_opt_element(handler, "content:encoded", self.description)
         super().publish_extensions(handler)
 
@@ -707,7 +756,11 @@ def _feed_item_duration_seconds(post: Post) -> int | None:
     return duration_seconds if duration_seconds > 0 else None
 
 
-def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem:
+def feed_item(
+    post: Post,
+    prepend_feed_title: bool = False,
+    has_transcript: bool = False,
+) -> PyRSS2Gen.RSSItem:
     """
     Given a post, return the corresponding RSS item. Reference:
     https://github.com/Podcast-Standards-Project/PSP-1-Podcast-RSS-Specification?tab=readme-ov-file#required-item-elements
@@ -728,6 +781,23 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
 
     duration_seconds = _feed_item_duration_seconds(post)
 
+    transcript_url = None
+    transcript_language = None
+    if has_transcript and transcript_ready(post):
+        transcript_url = _append_feed_token_params(
+            f"{base_url}{post_transcript_path(post.guid)}"
+        )
+        feed = getattr(post, "feed", None)
+        transcript_language = getattr(feed, "language", None) if feed else None
+        if transcript_language == "auto":
+            transcript_language = None
+
+    chapters_url = None
+    if processed_chapters(getattr(post, "processed_audio_path", None)):
+        chapters_url = _append_feed_token_params(
+            f"{base_url}{post_chapters_path(post.guid)}"
+        )
+
     item = ItunesRSSItem(
         title=title,
         enclosure=PyRSS2Gen.Enclosure(
@@ -740,6 +810,9 @@ def feed_item(post: Post, prepend_feed_title: bool = False) -> PyRSS2Gen.RSSItem
         pubDate=_format_pub_date(post.release_date),
         image_url=post.image_url,
         duration_seconds=duration_seconds,
+        transcript_url=transcript_url,
+        transcript_language=transcript_language,
+        chapters_url=chapters_url,
     )
 
     return item
@@ -801,7 +874,13 @@ def generate_feed_xml(feed: Feed) -> Any:
             .all()
         )
 
-    items = [feed_item(post) for post in posts]
+    posts = [post for post in posts if not is_title_excluded(feed, post.title)]
+    with_transcripts = post_ids_with_transcripts(
+        [post.id for post in posts if transcript_ready(post)]
+    )
+    items = [
+        feed_item(post, has_transcript=post.id in with_transcripts) for post in posts
+    ]
 
     base_url = _get_base_url()
     link = _append_feed_token_params(f"{base_url}/feed/{feed.id}")
@@ -819,6 +898,7 @@ def generate_feed_xml(feed: Feed) -> Any:
 
     rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
+    rss_feed.rss_attrs["xmlns:podcast"] = PODCAST_NAMESPACE
 
     logger.info(f"XML generated for feed with ID: {feed.id}")
     return rss_feed.to_xml("utf-8")
@@ -830,8 +910,20 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
     user_id = user.id if user else 0
     logger.info(f"Generating aggregate feed XML for: {username}")
 
-    posts = get_user_aggregate_posts(user_id)
-    items = [feed_item(post, prepend_feed_title=True) for post in posts]
+    posts = [
+        post for post in get_user_aggregate_posts(user_id) if not is_post_excluded(post)
+    ]
+    with_transcripts = post_ids_with_transcripts(
+        [post.id for post in posts if transcript_ready(post)]
+    )
+    items = [
+        feed_item(
+            post,
+            prepend_feed_title=True,
+            has_transcript=post.id in with_transcripts,
+        )
+        for post in posts
+    ]
 
     base_url = _get_base_url()
     link = _append_feed_token_params(f"{base_url}/feed/user/{user_id}")
@@ -862,6 +954,7 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
 
     rss_feed.rss_attrs["xmlns:itunes"] = "http://www.itunes.com/dtds/podcast-1.0.dtd"
     rss_feed.rss_attrs["xmlns:content"] = "http://purl.org/rss/1.0/modules/content/"
+    rss_feed.rss_attrs["xmlns:podcast"] = PODCAST_NAMESPACE
 
     logger.info(f"Aggregate XML generated for: {username}")
     return rss_feed.to_xml("utf-8")
@@ -877,17 +970,22 @@ def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post
 
     all_posts = []
     for feed_id in feed_ids:
-        # Fetch last N processed posts for this feed
-        posts = (
-            Post.query.filter(
-                Post.feed_id == feed_id,
-                Post.whitelisted.is_(True),
-                Post.processed_audio_path.isnot(None),
-            )
-            .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-            .limit(limit_per_feed)
-            .all()
-        )
+        # Fetch last N processed posts for this feed, skipping excluded titles
+        # before the limit so a feed still contributes N episodes.
+        feed = db.session.get(Feed, feed_id)
+        query = Post.query.filter(
+            Post.feed_id == feed_id,
+            Post.whitelisted.is_(True),
+            Post.processed_audio_path.isnot(None),
+        ).order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+        if feed is not None and getattr(feed, "episode_title_exclude_strings", None):
+            posts = [
+                post
+                for post in query.limit(limit_per_feed * 20).all()
+                if not is_title_excluded(feed, post.title)
+            ][:limit_per_feed]
+        else:
+            posts = query.limit(limit_per_feed).all()
         all_posts.extend(posts)
 
     # Sort all posts by release date descending

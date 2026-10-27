@@ -12,6 +12,11 @@ export interface Feed {
   is_active_subscription?: boolean;
   ad_detection_strategy?: 'llm' | 'chapter' | 'chapter_insert';
   chapter_filter_strings?: string | null;
+  episode_title_exclude_strings?: string | null;
+  trim_silence?: boolean | null;
+  normalize_loudness?: boolean | null;
+  always_transcribe?: boolean | null;
+  generate_summary?: boolean | null;
   enable_llm_chapter_fallback_tagging?: boolean | null;
   auto_whitelist_new_episodes_override?: boolean | null;
   language?: string | null;
@@ -20,6 +25,11 @@ export interface Feed {
 export interface FeedSettingsUpdate {
   ad_detection_strategy?: 'llm' | 'chapter' | 'chapter_insert';
   chapter_filter_strings?: string | null;
+  episode_title_exclude_strings?: string | null;
+  trim_silence?: boolean | null;
+  normalize_loudness?: boolean | null;
+  always_transcribe?: boolean | null;
+  generate_summary?: boolean | null;
   enable_llm_chapter_fallback_tagging?: boolean | null;
   auto_whitelist_new_episodes_override?: boolean | null;
   language?: string | null;

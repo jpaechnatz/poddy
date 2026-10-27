@@ -45,7 +45,13 @@ def clip_segments_with_fade(
     use_vbr: bool = False,
     vbr_quality: int = 2,
     cbr_bitrate: str = "192k",
-) -> None:
+) -> list[tuple[int, int]]:
+    """Cut ad segments out of in_path and return the audio actually removed.
+
+    With fades, fade_ms of each ad edge stays in the output (faded out and in),
+    so the removed window is narrower than the ad. Callers that move
+    timestamps (chapters, transcripts) must use the returned windows.
+    """
 
     audio_duration_ms = get_audio_duration_ms(in_path)
     assert audio_duration_ms is not None
@@ -55,7 +61,7 @@ def clip_segments_with_fade(
     # Try the complex filter approach first, fall back to simple if it fails
     # Catch both ffmpeg.Error (runtime) and broader exceptions (filter graph construction)
     try:
-        _clip_segments_complex(
+        return _clip_segments_complex(
             ad_segments_ms, fade_ms, in_path, out_path, audio_duration_ms, encoding_args
         )
     except ffmpeg.Error as e:
@@ -66,6 +72,7 @@ def clip_segments_with_fade(
         _clip_segments_simple(
             ad_segments_ms, in_path, out_path, audio_duration_ms, encoding_args
         )
+        return list(ad_segments_ms)
     except Exception as e:  # noqa: BLE001
         # Catches filter graph construction errors like "multiple outgoing edges"
         logger.warning(
@@ -74,22 +81,28 @@ def clip_segments_with_fade(
         _clip_segments_simple(
             ad_segments_ms, in_path, out_path, audio_duration_ms, encoding_args
         )
+        return list(ad_segments_ms)
 
 
 def _clip_segments_complex(
     ad_segments_ms: list[tuple[int, int]],
-    fade_ms: int,
+    fade_ms_config: int,
     in_path: str,
     out_path: str,
     audio_duration_ms: int,
     encoding_args: dict[str, Any],
-) -> None:
-    """Original complex approach with fades."""
+) -> list[tuple[int, int]]:
+    """Original complex approach with fades. Returns the removed windows."""
 
     trimmed_list = []
+    removed_windows: list[tuple[int, int]] = []
 
     last_end = 0
     for start_ms, end_ms in ad_segments_ms:
+        # An ad shorter than two fades would otherwise repeat audio.
+        fade_ms = min(fade_ms_config, max(0, (end_ms - start_ms) // 2))
+        if end_ms - 2 * fade_ms > start_ms:
+            removed_windows.append((start_ms + fade_ms, end_ms - fade_ms))
         trimmed_list.extend(
             [
                 ffmpeg.input(in_path).filter(
@@ -128,6 +141,7 @@ def _clip_segments_complex(
         .run()
     )
     logger.info("[FFMPEG_CONCAT] Completed audio concatenation: %s", out_path)
+    return removed_windows
 
 
 def clip_segments_exact(

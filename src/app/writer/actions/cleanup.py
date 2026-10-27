@@ -135,6 +135,8 @@ def clear_post_processing_data_action(params: dict[str, Any]) -> dict[str, Any]:
     post.processed_audio_path = None
     post.duration = None
     post.chapter_data = None
+    post.audio_edits = None
+    post.summary = None
     post.processing_failed = False
     post.refined_ad_boundaries = None
     post.refined_ad_boundaries_updated_at = None
@@ -210,6 +212,8 @@ def clear_post_processing_data_keep_transcript_action(
     post.processed_audio_path = None
     post.duration = None
     post.chapter_data = None
+    post.audio_edits = None
+    post.summary = None
     post.processing_failed = False
     post.refined_ad_boundaries = None
     post.refined_ad_boundaries_updated_at = None
