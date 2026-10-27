@@ -25,6 +25,15 @@ WHISPER_REMOTE_LANGUAGE = "en"
 WHISPER_REMOTE_TIMEOUT_SEC = 600
 WHISPER_REMOTE_CHUNKSIZE_MB = 24
 
+# OpenRouter preset (OPENROUTER_API_KEY): one key for transcription and LLM.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+# Cheap, reliable segment timestamps (~$0.012 per audio hour on OpenRouter).
+OPENROUTER_TRANSCRIBE_MODEL = "openai/whisper-large-v3-turbo"
+# "~...-latest" is an OpenRouter alias for the newest DeepSeek Flash model.
+OPENROUTER_LLM_MODEL = "openrouter/~deepseek/deepseek-flash-latest"
+# OpenRouter caps uploads at 25 MB and upstream processing at 60 s.
+OPENROUTER_CHUNKSIZE_MB = 10
+
 WHISPER_GROQ_MODEL = "whisper-large-v3-turbo"
 WHISPER_GROQ_LANGUAGE = "en"
 WHISPER_GROQ_MAX_RETRIES = 0

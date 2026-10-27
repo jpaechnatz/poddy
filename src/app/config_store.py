@@ -576,12 +576,41 @@ def to_pydantic_config() -> PydanticConfig:
     )
 
 
+def apply_openrouter_env_preset() -> None:
+    """Expand OPENROUTER_API_KEY into the regular transcription/LLM env vars.
+
+    Only fills variables that are not set, so anything configured explicitly
+    (e.g. LLM_MODEL or WHISPER_REMOTE_MODEL) wins. Runs in every process that
+    hydrates the config (web app and writer), so both see the same settings.
+    """
+    key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    if not key:
+        return
+    preset = {
+        "WHISPER_TYPE": "remote",
+        "WHISPER_REMOTE_API_KEY": key,
+        "WHISPER_REMOTE_BASE_URL": DEFAULTS.OPENROUTER_BASE_URL,
+        "WHISPER_REMOTE_MODEL": DEFAULTS.OPENROUTER_TRANSCRIBE_MODEL,
+        "WHISPER_REMOTE_CHUNKSIZE_MB": str(DEFAULTS.OPENROUTER_CHUNKSIZE_MB),
+        "LLM_API_KEY": key,
+        "LLM_MODEL": DEFAULTS.OPENROUTER_LLM_MODEL,
+    }
+    applied = []
+    for name, value in preset.items():
+        if not (os.environ.get(name) or "").strip():
+            os.environ[name] = value
+            applied.append(name)
+    if applied:
+        logger.info("OpenRouter preset filled: %s", ", ".join(applied))
+
+
 def hydrate_runtime_config_inplace(db_config: PydanticConfig | None = None) -> None:
     """Hydrate the in-process runtime config from DB-backed settings in-place.
 
     Preserves the identity of the `app.config` Pydantic instance so any modules
     that imported it by value continue to see updated fields.
     """
+    apply_openrouter_env_preset()
     cfg = db_config or to_pydantic_config()
 
     _log_initial_snapshot(cfg)
@@ -593,6 +622,8 @@ def hydrate_runtime_config_inplace(db_config: PydanticConfig | None = None) -> N
     _apply_llm_model_override(cfg)
 
     _apply_whisper_type_override(cfg)
+
+    _apply_whisper_language_override(cfg)
 
     _commit_runtime_config(cfg)
     _log_final_snapshot()
@@ -914,6 +945,22 @@ def _apply_whisper_type_override(cfg: PydanticConfig) -> None:
         _configure_groq_whisper(cfg)
     elif wtype == "test":
         cfg.whisper = TestWhisperConfig()
+
+
+def _apply_whisper_language_override(cfg: PydanticConfig) -> None:
+    """WHISPER_LANGUAGE sets the default transcription language (or "auto")."""
+    from app.whisper_languages import normalize_whisper_language
+
+    raw = (os.environ.get("WHISPER_LANGUAGE") or "").strip().lower()
+    if not raw or cfg.whisper is None or not hasattr(cfg.whisper, "language"):
+        return
+    try:
+        language = normalize_whisper_language(raw)
+    except ValueError:
+        logger.warning("Ignoring unsupported WHISPER_LANGUAGE=%r", raw)
+        return
+    if language:
+        cfg.whisper.language = language  # type: ignore[union-attr]
 
 
 def _commit_runtime_config(cfg: PydanticConfig) -> None:

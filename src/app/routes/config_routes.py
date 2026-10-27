@@ -333,6 +333,14 @@ def _register_remote_whisper_overrides(overrides: dict[str, Any]) -> None:
             remote_chunksize,
         )
 
+    _register_whisper_language_override(overrides)
+
+
+def _register_whisper_language_override(overrides: dict[str, Any]) -> None:
+    language = os.environ.get("WHISPER_LANGUAGE")
+    if language:
+        _register_override(overrides, "whisper.language", "WHISPER_LANGUAGE", language)
+
 
 def _register_groq_whisper_overrides(overrides: dict[str, Any]) -> None:
     """Register groq whisper environment overrides."""
@@ -352,6 +360,8 @@ def _register_groq_whisper_overrides(overrides: dict[str, Any]) -> None:
         _register_override(
             overrides, "whisper.max_retries", "GROQ_MAX_RETRIES", groq_retries
         )
+
+    _register_whisper_language_override(overrides)
 
 
 def _register_local_whisper_overrides(overrides: dict[str, Any]) -> None:
@@ -447,6 +457,8 @@ def _get_whisper_overridden_fields() -> set[str]:
         overridden.add("whisper.timeout_sec")
     if os.environ.get("WHISPER_REMOTE_CHUNKSIZE_MB"):
         overridden.add("whisper.chunksize_mb")
+    if os.environ.get("WHISPER_LANGUAGE"):
+        overridden.add("whisper.language")
 
     # Groq whisper
     if os.environ.get("GROQ_API_KEY"):
