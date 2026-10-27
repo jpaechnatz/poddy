@@ -141,7 +141,12 @@ def _collect_optional_settings(
             tzinfo=None
         )
 
-    for field_name in ("trim_silence", "normalize_loudness"):
+    for field_name in (
+        "trim_silence",
+        "normalize_loudness",
+        "always_transcribe",
+        "generate_summary",
+    ):
         value, error_response = _parse_optional_feed_bool(payload, field_name)
         if error_response is not None:
             return error_response
@@ -1148,6 +1153,8 @@ def _serialize_feed(
         ),
         "trim_silence": bool(getattr(feed, "trim_silence", False)),
         "normalize_loudness": bool(getattr(feed, "normalize_loudness", False)),
+        "always_transcribe": bool(getattr(feed, "always_transcribe", False)),
+        "generate_summary": bool(getattr(feed, "generate_summary", False)),
         "enable_llm_chapter_fallback_tagging": getattr(
             feed, "enable_llm_chapter_fallback_tagging", None
         ),

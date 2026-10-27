@@ -57,6 +57,12 @@ export default function FeedSettingsModal({
   const [normalizeLoudness, setNormalizeLoudness] = useState(
     feed.normalize_loudness === true
   );
+  const [alwaysTranscribe, setAlwaysTranscribe] = useState(
+    feed.always_transcribe === true
+  );
+  const [generateSummary, setGenerateSummary] = useState(
+    feed.generate_summary === true
+  );
 
   useEffect(() => {
     setStrategy(feed.ad_detection_strategy || 'llm');
@@ -79,6 +85,8 @@ export default function FeedSettingsModal({
     setExcludeStrings(feed.episode_title_exclude_strings ?? '');
     setTrimSilence(feed.trim_silence === true);
     setNormalizeLoudness(feed.normalize_loudness === true);
+    setAlwaysTranscribe(feed.always_transcribe === true);
+    setGenerateSummary(feed.generate_summary === true);
   }, [feed, llmChapterFallbackGlobalDefault]);
 
   const updateMutation = useMutation({
@@ -147,6 +155,14 @@ export default function FeedSettingsModal({
 
     if (normalizeLoudness !== (feed.normalize_loudness === true)) {
       settings.normalize_loudness = normalizeLoudness;
+    }
+
+    if (alwaysTranscribe !== (feed.always_transcribe === true)) {
+      settings.always_transcribe = alwaysTranscribe;
+    }
+
+    if (generateSummary !== (feed.generate_summary === true)) {
+      settings.generate_summary = generateSummary;
     }
 
     if (Object.keys(settings).length === 0) {
@@ -360,6 +376,34 @@ export default function FeedSettingsModal({
             <p className="text-xs text-gray-500 mt-1">
               Applies to newly processed episodes. Pauses longer than 2 seconds
               are shortened; chapters are moved to match.
+            </p>
+          </div>
+
+          <div>
+            <span className="block text-sm font-medium text-gray-700 mb-2">
+              Extras
+            </span>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={alwaysTranscribe}
+                onChange={(e) => setAlwaysTranscribe(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Always transcribe (publish transcript in every mode)
+            </label>
+            <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={generateSummary}
+                onChange={(e) => setGenerateSummary(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              AI summary in the episode description
+            </label>
+            <p className="text-xs text-gray-500 mt-1">
+              Chapter-based modes normally skip transcription; these options add
+              transcription (and LLM) cost per episode.
             </p>
           </div>
 

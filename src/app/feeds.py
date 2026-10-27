@@ -161,9 +161,28 @@ def _normalize_feed_text(value: str | None) -> str:
     return value.translate(_FEED_TEXT_NORMALIZE_TABLE)
 
 
+def _render_summary_html(post: Post) -> str:
+    summary = str(getattr(post, "summary", None) or "").strip()
+    if not summary:
+        return ""
+    paragraphs: list[str] = []
+    bullets: list[str] = []
+    for raw_line in summary.splitlines():
+        line = raw_line.strip()
+        if line.startswith(("- ", "* ", "• ")):
+            bullets.append(f"<li>{html.escape(line[2:].strip())}</li>")
+        elif line:
+            paragraphs.append(f"<p>{html.escape(line)}</p>")
+    bullet_html = f"<ul>{''.join(bullets)}</ul>" if bullets else ""
+    return "<p><strong>Podly Summary</strong></p>" + "".join(paragraphs) + bullet_html
+
+
 def build_post_feed_description_html(post: Post) -> str:
     """Build the description shown in Podly-generated RSS items for a post."""
     description_parts: list[str] = []
+    summary_html = _render_summary_html(post)
+    if summary_html:
+        description_parts.append(summary_html)
     if post.description:
         description_parts.append(_normalize_feed_text(post.description))
 

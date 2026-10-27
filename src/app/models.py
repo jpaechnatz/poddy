@@ -54,6 +54,11 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     # Optional audio polishing after ad removal; null/false = off.
     trim_silence = db.Column(db.Boolean, nullable=True)
     normalize_loudness = db.Column(db.Boolean, nullable=True)
+    # Transcribe in every strategy (chapter modes otherwise skip it), so the
+    # feed can carry transcripts; null/false = off.
+    always_transcribe = db.Column(db.Boolean, nullable=True)
+    # AI summary of the ad-free transcript at the top of the description.
+    generate_summary = db.Column(db.Boolean, nullable=True)
     auto_whitelist_new_episodes_override = db.Column(db.Boolean, nullable=True)
     language = db.Column(db.Text, nullable=True)
     # Bumped by `refresh_feed_action` whenever something actually changes
@@ -120,6 +125,8 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
     # removed by each processing pass, in the time base of that pass's input.
     # Maps source timestamps (transcript) onto the processed file.
     audio_edits = db.Column(db.Text, nullable=True)
+    # AI summary of the episode (overview + "- " bullet lines), if enabled.
+    summary = db.Column(db.Text, nullable=True)
     # True when ad detection did not finish and the episode was published without
     # ad removal (with a spoken notice); cleared by a successful run or a reprocess.
     processing_failed = db.Column(db.Boolean, default=False, nullable=False)
