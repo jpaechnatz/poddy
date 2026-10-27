@@ -219,6 +219,18 @@ def test_token_auth_covers_guids_with_slashes(app: Any) -> None:
             assert _is_token_protected_endpoint(path), path
             assert _resolve_feed_id(path) == feed.id, path
 
+        # URL-style GUIDs that end in ".mp3" themselves.
+        url_guid = "https://cdn.example.com/ep1.mp3"
+        _processed_post(feed, url_guid, json.dumps({"ads": []}))
+        for suffix in (
+            ".mp3",
+            "/transcript.vtt",
+            "/chapters.json",
+            "/chapter-images/0",
+        ):
+            path = f"/post/{url_guid}{suffix}"
+            assert _resolve_feed_id(path) == feed.id, path
+
 
 def test_transcript_route_handles_encoded_slash_guid_and_whitelist(
     app: Any,

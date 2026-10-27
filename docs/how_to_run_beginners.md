@@ -18,6 +18,7 @@ If you don't have the repo downloaded:
 Help me install docker and run Podly https://github.com/jpaechnatz/poddy
 After the project is cloned, help me:
 - install docker & docker compose
+- copy `.env.local.example` to `.env.local` and fill in the API keys
 - run `docker compose -f compose.pi.yml up -d --build` (builds this fork; do not use the prebuilt upstream images)
 - configure the app via the web UI at http://localhost:5001/config
 Be sure to check if a dependency is already installed before downloading.
@@ -33,6 +34,7 @@ If you do have the repo pulled, open this file and prompt:
 Review this project, follow this guide and start Podly on my computer.
 Briefly, help me:
 - install docker & docker compose
+- copy `.env.local.example` to `.env.local` and fill in the API keys
 - run `docker compose -f compose.pi.yml up -d --build` (builds this fork; do not use the prebuilt upstream images)
 - configure the app via the web UI at http://localhost:5001/config
 Be sure to check if a dependency is already installed before downloading.
@@ -115,6 +117,9 @@ Build this fork from source. `./run_podly_docker.sh` without `--dev` pulls the
 upstream Podly images, which do not contain this fork's features.
 
 ```bash
+# Settings and API keys (once); both compose files read .env.local
+cp .env.local.example .env.local
+
 # Lite image (remote transcription, e.g. OpenRouter or Groq) - also for Raspberry Pi
 docker compose -f compose.pi.yml up -d --build
 
@@ -151,18 +156,20 @@ export PODLY_SECRET_KEY='replace-with-a-strong-64-char-secret'
 
 ## Advanced Options
 
+All commands build this fork from source (the prebuilt upstream images used
+by `./run_podly_docker.sh` in production mode do not contain its features).
+
 ```bash
-# Force CPU-only processing (if you have GPU issues)
-./run_podly_docker.sh --cpu
+# Full image with NVIDIA GPU support for local Whisper
+USE_GPU=true USE_GPU_NVIDIA=true \
+  BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 \
+  docker compose -f compose.dev.cpu.yml -f compose.dev.nvidia.yml up -d --build
 
-# Force GPU processing
-./run_podly_docker.sh --gpu
+# Just build the image without running
+docker compose -f compose.pi.yml build
 
-# Just build the container without running
-./run_podly_docker.sh --build
-
-# Test build from scratch (useful for troubleshooting)
-./run_podly_docker.sh --test-build
+# Rebuild from scratch (useful for troubleshooting)
+docker compose -f compose.pi.yml build --no-cache
 ```
 
 ## Using Podly

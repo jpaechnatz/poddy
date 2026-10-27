@@ -127,6 +127,12 @@ def _resolve_user_id_from_feed_path(path: str) -> int | None:
     return None
 
 
+_POST_PATH_RE = re.compile(
+    r"^/post/(.+?)(?:/chapter-images/\d+|/transcript\.vtt|/chapters\.json"
+    r"|/original\.mp3|\.mp3)$"
+)
+
+
 def _resolve_feed_id(path: str) -> int | None:
     if path.startswith("/feed/"):
         remainder = path[len("/feed/") :]
@@ -143,14 +149,12 @@ def _resolve_feed_id(path: str) -> int | None:
         return post.feed_id if post else None
 
     if path.startswith("/post/"):
-        guid = path[len("/post/") :]
-        # Strip only the known route suffixes; GUIDs may contain dots.
-        guid = re.sub(r"/chapter-images/\d+$", "", guid)
-        for suffix in ("/transcript.vtt", "/chapters.json", "/original.mp3", ".mp3"):
-            if guid.endswith(suffix):
-                guid = guid[: -len(suffix)]
-                break
-        post = Post.query.filter_by(guid=guid).first()
+        # Strip exactly one known route suffix; GUIDs may contain dots, slashes
+        # and even end in ".mp3" themselves (URL-style GUIDs).
+        match = _POST_PATH_RE.match(path)
+        if match is None:
+            return None
+        post = Post.query.filter_by(guid=match.group(1)).first()
         return post.feed_id if post else None
 
     return None

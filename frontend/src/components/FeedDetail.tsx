@@ -869,8 +869,15 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
 
                         <button
                           onClick={() => {
-                            markBacklogSeenMutation.mutate();
                             setShowMenu(false);
+                            if (
+                              window.confirm(
+                                'Stop processing all episodes that are not processed yet? ' +
+                                  'Queued and running jobs are cancelled; new episodes are still processed automatically.'
+                              )
+                            ) {
+                              markBacklogSeenMutation.mutate();
+                            }
                           }}
                           disabled={markBacklogSeenMutation.isPending || totalCount === 0}
                           title="Stop processing existing unprocessed episodes; new episodes are still processed automatically"
