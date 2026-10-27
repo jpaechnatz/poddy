@@ -48,11 +48,15 @@ WHISPER_REMOTE_CHUNKSIZE_MB=10
 LLM_API_KEY=sk-or-...
 LLM_MODEL=openrouter/<anbieter>/<modell>
 
-# Empfohlen, sobald Podly außerhalb des Heimnetzes erreichbar ist
-# REQUIRE_AUTH=true
-# PODLY_ADMIN_USERNAME=admin
-# PODLY_ADMIN_PASSWORD=...
-# PODLY_SECRET_KEY=<lange zufällige Zeichenkette>
+# Pflicht, sobald Podly aus dem Internet erreichbar ist (z. B. Tailscale Funnel)
+REQUIRE_AUTH=true
+PODLY_ADMIN_USERNAME=admin
+PODLY_ADMIN_PASSWORD=<langes Passwort>
+PODLY_SECRET_KEY=<Ausgabe von: openssl rand -hex 32>
+
+# Nur hinter tailscale serve/funnel oder einem anderen Proxy auf dem Pi:
+# Gateway des Docker-Netzwerks aus compose.pi.yml, damit Feed-Links https nutzen
+PODLY_TRUSTED_PROXY=172.30.42.1
 ```
 
 Die Sprache stellst du später pro Feed ein (Deutsch, Englisch, … oder
@@ -70,11 +74,16 @@ erzeugst du sie im Container (kein Python auf dem Pi nötig):
 mkdir -p src/instance
 docker compose -f compose.pi.yml build
 docker compose -f compose.pi.yml run --rm --no-deps \
+  -e PUID="$(id -u)" -e PGID="$(id -g)" \
   -v "$PWD/src/migrations:/app/src/migrations" podly \
-  bash -c 'cd /app/src && flask --app app db upgrade && flask --app app db migrate -m "feed extras and audio edits"'
+  bash -c 'cd /app && export PYTHONPATH=/app/src && flask --app app db upgrade && flask --app app db migrate -m "feed extras and audio edits"'
 ```
 
-Danach liegt eine neue Datei in `src/migrations/versions/`. Kurz prüfen und
+Die Ausgabe sollte sieben „Detected added column …“-Zeilen zeigen
+(`feed.episode_title_exclude_strings`, `feed.trim_silence`,
+`feed.normalize_loudness`, `feed.always_transcribe`, `feed.generate_summary`,
+`post.audio_edits`, `post.summary`). Danach liegt eine neue Datei in
+`src/migrations/versions/`. Kurz prüfen und
 committen, damit sie nicht verloren geht:
 
 ```bash
@@ -92,7 +101,32 @@ docker compose -f compose.pi.yml logs -f      # Strg+C beendet nur die Anzeige
 Die Oberfläche ist dann unter `http://<pi-name-oder-ip>:5001` erreichbar.
 Der Build dauert auf dem Pi beim ersten Mal einige Minuten.
 
-## 6. Beispiel: Retrokompott
+## 6. Von unterwegs erreichbar machen: Tailscale Funnel
+
+Funnel stellt Podly unter `https://<pi-name>.<tailnet>.ts.net` öffentlich ins
+Internet. Podcast-Apps brauchen das, wenn sie Feeds nicht über dein Tailnet
+abrufen können.
+
+```bash
+sudo tailscale funnel --bg 5001
+tailscale funnel status
+```
+
+Wichtig:
+
+- `REQUIRE_AUTH=true` muss gesetzt sein (siehe oben), sonst kann jeder deine
+  Feeds und Audios abrufen. Ohne Login antworten Feeds, Audio, Transkripte und
+  Kapitel mit 401.
+- `PODLY_TRUSTED_PROXY=172.30.42.1` sorgt dafür, dass Podly das `https` von
+  Funnel übernimmt. Ohne diese Zeile stehen im Feed `http://…`-Links.
+- Prüfen: Feed im Browser öffnen und schauen, ob `<enclosure url="https://…ts.net/…`
+  im XML steht.
+- Podcast-Apps abonnieren den Feed über den Link mit Feed-Token aus der
+  Oberfläche (Feed teilen/kopieren), nicht über Benutzername/Passwort.
+
+Nur im eigenen Tailnet (nicht öffentlich) reicht `sudo tailscale serve --bg 5001`.
+
+## 7. Beispiel: Retrokompott
 
 Feed hinzufügen, dann in den Feed-Einstellungen:
 

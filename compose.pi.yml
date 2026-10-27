@@ -44,3 +44,11 @@ services:
 networks:
   default:
     name: podly-pure-podcasts-network
+    # Fixed subnet so the gateway (the peer Podly sees for requests forwarded
+    # by tailscale serve/funnel or another proxy on the host) is predictable:
+    # set PODLY_TRUSTED_PROXY=172.30.42.1 in .env.local. Change both if the
+    # subnet collides with your network.
+    ipam:
+      config:
+        - subnet: 172.30.42.0/24
+          gateway: 172.30.42.1
