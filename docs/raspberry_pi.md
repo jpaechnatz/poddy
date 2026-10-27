@@ -22,7 +22,7 @@ sudo usermod -aG docker "$USER"   # danach einmal ab- und wieder anmelden
 ```bash
 git clone https://github.com/jpaechnatz/poddy.git
 cd poddy
-git checkout claude/zealous-newton-7x0044   # oder main, sobald gemergt
+# nach dem Merge reicht main; vorher: git checkout claude/zealous-newton-7x0044
 ```
 
 ## 3. Konfiguration `.env.local`
@@ -62,34 +62,11 @@ PODLY_TRUSTED_PROXY=172.30.42.1
 Die Sprache stellst du später pro Feed ein (Deutsch, Englisch, … oder
 „Auto-detect“ für Folgen mit fremdsprachigen Einspielern).
 
-## 4. Datenbank-Migration erzeugen (nur einmal, solange sie im Branch fehlt)
+## 4. Datenbank
 
-Der Branch fügt neue Datenbankspalten hinzu. Die passende Alembic-Migration
-muss es geben, bevor Podly zum ersten Mal startet. Falls in
-`src/migrations/versions/` noch keine Migration für
-`episode_title_exclude_strings`, `trim_silence`, `audio_edits` usw. liegt,
-erzeugst du sie im Container (kein Python auf dem Pi nötig):
-
-```bash
-mkdir -p src/instance
-docker compose -f compose.pi.yml build
-docker compose -f compose.pi.yml run --rm --no-deps \
-  -e PUID="$(id -u)" -e PGID="$(id -g)" \
-  -v "$PWD/src/migrations:/app/src/migrations" podly \
-  bash -c 'cd /app && export PYTHONPATH=/app/src && flask --app app db upgrade && flask --app app db migrate -m "feed extras and audio edits"'
-```
-
-Die Ausgabe sollte sieben „Detected added column …“-Zeilen zeigen
-(`feed.episode_title_exclude_strings`, `feed.trim_silence`,
-`feed.normalize_loudness`, `feed.always_transcribe`, `feed.generate_summary`,
-`post.audio_edits`, `post.summary`). Danach liegt eine neue Datei in
-`src/migrations/versions/`. Kurz prüfen und
-committen, damit sie nicht verloren geht:
-
-```bash
-git status
-git add src/migrations/versions && git commit -m "chore: add migration for feed extras"
-```
+Podly legt die Datenbank (`src/instance/sqlite3.db`) beim ersten Start selbst
+an und bringt sie bei jedem Start per Migration auf den aktuellen Stand. Du
+musst dafür nichts tun.
 
 ## 5. Starten
 
