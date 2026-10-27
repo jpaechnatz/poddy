@@ -32,35 +32,19 @@ cp .env.local.example .env.local
 nano .env.local
 ```
 
-Beispiel für OpenRouter (Transkription mit Voxtral, Werbeerkennung mit einem
-LLM über OpenRouter). Den Key legst du unter https://openrouter.ai/keys an:
+Für den Start reichen zwei Zeilen. Den Key legst du unter
+https://openrouter.ai/keys an (vorher Guthaben aufladen):
 
 ```ini
-# Transkription (OpenAI-kompatible Schnittstelle von OpenRouter)
-WHISPER_TYPE=remote
-WHISPER_REMOTE_BASE_URL=https://openrouter.ai/api/v1
-WHISPER_REMOTE_API_KEY=sk-or-...
-WHISPER_REMOTE_MODEL=mistralai/voxtral-small-transcribe-3-0
-# OpenRouter nimmt max. 25 MB pro Upload und bricht nach 60 s ab: kleine Stücke
-WHISPER_REMOTE_CHUNKSIZE_MB=10
-
-# Werbeerkennung / Zusammenfassung (LiteLLM-Modellname mit "openrouter/"-Präfix)
-LLM_API_KEY=sk-or-...
-LLM_MODEL=openrouter/<anbieter>/<modell>
-
-# Pflicht, sobald Podly aus dem Internet erreichbar ist (z. B. Tailscale Funnel)
-REQUIRE_AUTH=true
-PODLY_ADMIN_USERNAME=admin
-PODLY_ADMIN_PASSWORD=<langes Passwort>
-PODLY_SECRET_KEY=<Ausgabe von: openssl rand -hex 32>
-
-# Nur hinter tailscale serve/funnel oder einem anderen Proxy auf dem Pi:
-# Gateway des Docker-Netzwerks aus compose.pi.yml, damit Feed-Links https nutzen
-PODLY_TRUSTED_PROXY=172.30.42.1
+OPENROUTER_API_KEY=sk-or-v1-...
+WHISPER_LANGUAGE=de
 ```
 
-Die Sprache stellst du später pro Feed ein (Deutsch, Englisch, … oder
-„Auto-detect“ für Folgen mit fremdsprachigen Einspielern).
+Damit richtet Poddy automatisch Transkription (`openai/whisper-large-v3-turbo`)
+und KI (`deepseek/deepseek-v4.1-flash`) über OpenRouter ein. Andere Modelle,
+Login und Tailscale-Einstellungen sind in der Datei kommentiert erklärt;
+`WHISPER_LANGUAGE=auto` erkennt die Sprache selbst (gut bei fremdsprachigen
+Einspielern). Die Sprache lässt sich zusätzlich pro Feed ändern.
 
 ## 4. Datenbank
 
@@ -91,11 +75,16 @@ tailscale funnel status
 
 Wichtig:
 
-- `REQUIRE_AUTH=true` muss gesetzt sein (siehe oben), sonst kann jeder deine
+- `REQUIRE_AUTH=true` muss gesetzt sein (Abschnitt ANMELDUNG in `.env.local`), sonst kann jeder deine
   Feeds und Audios abrufen. Ohne Login antworten Feeds, Audio, Transkripte und
   Kapitel mit 401.
-- `PODLY_TRUSTED_PROXY=172.30.42.1` sorgt dafür, dass Podly das `https` von
-  Funnel übernimmt. Ohne diese Zeile stehen im Feed `http://…`-Links.
+- `PODLY_TRUSTED_PROXY=172.30.42.1` in `.env.local` sorgt dafür, dass Poddy
+  das `https` von Funnel übernimmt. Ohne diese Zeile stehen im Feed
+  `http://…`-Links.
+- Dazu den Port nur lokal veröffentlichen, damit niemand im Heimnetz dieselbe
+  vertraute Adresse nutzt: `echo PODDY_BIND_ADDRESS=127.0.0.1 > .env` im
+  Projektordner, danach `docker compose -f compose.pi.yml up -d`. Poddy ist
+  dann nur noch über Tailscale bzw. auf dem Pi selbst erreichbar.
 - Prüfen: Feed im Browser öffnen und schauen, ob `<enclosure url="https://…ts.net/…`
   im XML steht.
 - Podcast-Apps abonnieren den Feed über den Link mit Feed-Token aus der

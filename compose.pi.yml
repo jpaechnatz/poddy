@@ -18,7 +18,10 @@ services:
         - USE_GPU_NVIDIA=false
         - USE_GPU_AMD=false
     ports:
-      - "5001:5001"
+      # Behind tailscale serve/funnel with PODLY_TRUSTED_PROXY, publish the port
+      # only on the host: put PODDY_BIND_ADDRESS=127.0.0.1 into a file named
+      # ".env" next to this file (docker compose reads it automatically).
+      - "${PODDY_BIND_ADDRESS:-0.0.0.0}:5001:5001"
     volumes:
       - ./src/instance:/app/src/instance
     env_file:
