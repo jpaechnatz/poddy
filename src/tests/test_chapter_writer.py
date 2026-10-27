@@ -50,3 +50,17 @@ def test_recalculate_chapter_times_merges_overlapping_removed_windows() -> None:
     # Unique removed duration is 120 seconds, not 150 seconds.
     assert [c.start_time_ms for c in adjusted] == [0, 280_000]
     assert [c.end_time_ms for c in adjusted] == [280_000, 680_000]
+
+
+def test_recalculate_chapter_times_drops_chapter_fully_inside_removed_audio() -> None:
+    chapters = [
+        Chapter("c1", "Intro", 0, 60_000),
+        Chapter("c2", "Werbung", 60_000, 90_000),
+        Chapter("c3", "Topic", 90_000, 200_000),
+    ]
+
+    adjusted = recalculate_chapter_times(chapters, removed_segments=[(60.0, 90.0)])
+
+    assert [c.title for c in adjusted] == ["Intro", "Topic"]
+    assert [c.start_time_ms for c in adjusted] == [0, 60_000]
+    assert [c.end_time_ms for c in adjusted] == [60_000, 170_000]

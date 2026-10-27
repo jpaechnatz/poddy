@@ -54,6 +54,11 @@ def recalculate_chapter_times(
         new_start_ms = max(0, chapter_start_ms - start_offset_ms)
         new_end_ms = max(new_start_ms, chapter_end_ms - end_offset_ms)
 
+        if new_end_ms <= new_start_ms and chapter_end_ms > chapter_start_ms:
+            # The whole chapter sat inside removed audio (e.g. an ad chapter).
+            logger.debug("Dropping chapter '%s' removed with the audio", chapter.title)
+            continue
+
         adjusted_chapters.append(
             Chapter(
                 element_id=chapter.element_id,

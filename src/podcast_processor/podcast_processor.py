@@ -33,6 +33,7 @@ from podcast_processor.chapter_fallback import (
     resolve_llm_path_chapters,
 )
 from podcast_processor.chapter_filter import parse_filter_strings
+from podcast_processor.chapter_reader import read_chapters
 from podcast_processor.chapter_writer import (
     recalculate_chapter_times,
     write_adjusted_chapters,
@@ -512,6 +513,17 @@ class PodcastProcessor:
                     "LLM path chapter fallback resolved %d chapters via %s",
                     len(chapters_for_output),
                     chapter_source,
+                )
+        elif unprocessed_audio_path:
+            # ffmpeg copies the source CHAP frames into the cut file with their
+            # original times, so later chapters would point past removed ads.
+            # Rewrite them with adjusted times even without fallback tagging.
+            embedded_chapters = read_chapters(unprocessed_audio_path)
+            if embedded_chapters:
+                write_adjusted_chapters(
+                    audio_path=processed_audio_path,
+                    chapters_to_keep=embedded_chapters,
+                    removed_segments=removed_segments_sec,
                 )
 
         chapter_data_json: str | None = None
