@@ -155,3 +155,20 @@ def test_trim_file_aac_input_remuxed() -> None:
         assert 9_500 <= actual_duration <= 10_500, (
             f"Duration out of range: expected ~10000ms, got {actual_duration}ms"
         )
+
+
+def test_clip_with_fade_reports_removed_windows_inside_fades() -> None:
+    with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as temp_file:
+        removed = clip_segments_with_fade(
+            [(3_000, 21_000), (40_000, 42_000)],
+            5_000,
+            TEST_FILE_PATH,
+            temp_file.name,
+        )
+        actual_duration = get_audio_duration_ms(temp_file.name)
+
+    # The 2 s ad is shorter than two fades: its fades shrink to 1 s each, so
+    # nothing is removed and no audio is repeated.
+    assert removed == [(8_000, 16_000)]
+    assert actual_duration is not None
+    assert abs(actual_duration - (TEST_FILE_DURATION - 8_000)) <= 120

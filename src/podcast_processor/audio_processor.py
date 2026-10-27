@@ -325,7 +325,8 @@ class AudioProcessor:
             post: The Post object containing the podcast to process
             output_path: Path where the processed audio file should be saved
         Returns:
-            The merged ad segments that were removed, as millisecond windows.
+            The audio actually removed, as millisecond windows. Fades keep the
+            edges of each ad, so these are narrower than the detected ads.
         """
         ad_segments = self.get_ad_segments(post)
 
@@ -347,7 +348,7 @@ class AudioProcessor:
         )
 
         # LLM strategy doesn't use chapter markers, so VBR is fine for smaller files
-        clip_segments_with_fade(
+        removed_windows = clip_segments_with_fade(
             in_path=post.unprocessed_audio_path,
             ad_segments_ms=merged_ad_segments,
             fade_ms=self.config.output.fade_ms,
@@ -389,4 +390,4 @@ class AudioProcessor:
         self.logger.info(
             f"Audio processing complete for post {post.id}, saved to {output_path}"
         )
-        return merged_ad_segments
+        return removed_windows

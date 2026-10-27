@@ -126,3 +126,23 @@ def test_llm_path_without_embedded_chapters_writes_nothing() -> None:
         processor._perform_llm_based_processing(_post(), job, "/tmp/out.mp3")
 
     write_mock.assert_not_called()
+
+
+def test_chapters_follow_cut_audio_with_fades(tmp_path: Path) -> None:
+    source = _mp3_with_chapters(tmp_path)
+    out = tmp_path / "out.mp3"
+
+    removed_ms = clip_segments_with_fade(
+        [(10_000, 20_000)], 2_000, str(source), str(out)
+    )
+    removed_sec = [(s / 1000.0, e / 1000.0) for s, e in removed_ms]
+    write_adjusted_chapters(str(out), read_chapters(str(source)), removed_sec)
+
+    # Fades keep 2 s on each side of the ad, so only 6 s are gone.
+    chapters = read_chapters(str(out))
+    assert removed_ms == [(12_000, 18_000)]
+    assert [(c.title, c.start_time_ms) for c in chapters] == [
+        ("Intro", 0),
+        ("Werbung", 10_000),
+        ("Thema", 14_000),
+    ]

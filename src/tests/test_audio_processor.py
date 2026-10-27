@@ -180,7 +180,8 @@ def test_process_audio(
                 side_effect=[30000, 24000],
             ),
             patch(
-                "podcast_processor.audio_processor.clip_segments_with_fade"
+                "podcast_processor.audio_processor.clip_segments_with_fade",
+                return_value=[(8000, 27000)],
             ) as mock_clip,
         ):
             # Call the method
@@ -192,5 +193,8 @@ def test_process_audio(
             assert refreshed.processed_audio_path == output_path
             # The default test config extends a final ad segment to the end when
             # it is within the minimum separation threshold of the episode end.
-            assert removed_segments == [(5000, 30000)]
+            assert mock_clip.call_args.kwargs["ad_segments_ms"] == [(5000, 30000)]
+            # process_audio reports the audio the cut really removed (fades keep
+            # the ad edges), which is what timestamp consumers need.
+            assert removed_segments == [(8000, 27000)]
             mock_clip.assert_called_once()
