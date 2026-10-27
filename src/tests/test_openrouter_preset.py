@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from typing import Any
+
+import pytest
 
 from app.config_store import apply_openrouter_env_preset
 from shared import defaults as DEFAULTS
@@ -20,6 +23,17 @@ PRESET_VARS = (
     "LLM_API_KEY",
     "LLM_MODEL",
 )
+
+
+@pytest.fixture(autouse=True)
+def _restore_runtime_config() -> Iterator[None]:
+    """Hydrate tests replace the global runtime config; put it back after."""
+    from app.runtime_config import config as runtime_config
+
+    saved = runtime_config.model_copy(deep=True)
+    yield
+    for field in type(runtime_config).model_fields:
+        setattr(runtime_config, field, getattr(saved, field))
 
 
 def _clean_env(monkeypatch: Any) -> None:
@@ -106,3 +120,73 @@ def test_whisper_language_env_sets_default_language(app: Any, monkeypatch: Any) 
         monkeypatch.setenv("WHISPER_LANGUAGE", "klingonisch")
         hydrate_runtime_config_inplace()  # invalid value is ignored, not fatal
         assert getattr(runtime_config.whisper, "language", None) != "klingonisch"
+
+
+def test_placeholder_key_from_example_is_ignored(monkeypatch: Any) -> None:
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-hier-deinen-key-eintragen")
+
+    apply_openrouter_env_preset()
+
+    assert os.environ.get("LLM_API_KEY") == ""
+    assert os.environ.get("WHISPER_REMOTE_API_KEY") == ""
+
+
+def test_groq_llm_keeps_its_own_key_with_openrouter_key_present(
+    monkeypatch: Any,
+) -> None:
+    # OpenRouter for nothing here: Groq transcription and Groq LLM.
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-123")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-1")
+    monkeypatch.setenv("WHISPER_TYPE", "groq")
+    monkeypatch.setenv("LLM_MODEL", "groq/openai/gpt-oss-120b")
+
+    apply_openrouter_env_preset()
+
+    assert os.environ["LLM_API_KEY"] == ""  # would clash with GROQ_API_KEY
+    assert os.environ["WHISPER_REMOTE_API_KEY"] == ""
+    assert os.environ["WHISPER_TYPE"] == "groq"
+
+
+def test_openai_whisper_endpoint_is_not_given_the_openrouter_key(
+    monkeypatch: Any,
+) -> None:
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-123")
+    monkeypatch.setenv("WHISPER_REMOTE_BASE_URL", "https://api.openai.com/v1")
+
+    apply_openrouter_env_preset()
+
+    assert os.environ["WHISPER_REMOTE_API_KEY"] == ""
+    assert os.environ["LLM_API_KEY"] == "sk-or-123"  # LLM still via OpenRouter
+
+
+def test_whisper_language_is_locked_and_stripped_from_saves(monkeypatch: Any) -> None:
+    from app.routes.config_routes import _strip_env_overridden_fields
+
+    monkeypatch.setenv("WHISPER_LANGUAGE", "de")
+
+    cleaned, stripped = _strip_env_overridden_fields(
+        {"whisper": {"whisper_type": "remote", "language": "en", "model": "m"}}
+    )
+
+    assert "whisper.language" in stripped
+    assert "language" not in cleaned["whisper"]
+
+
+def test_whisper_language_applies_to_local_whisper(app: Any, monkeypatch: Any) -> None:
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("WHISPER_TYPE", "test")
+    monkeypatch.setenv("WHISPER_LANGUAGE", "de")
+
+    with app.app_context():
+        from app.config_store import _apply_whisper_language_override
+        from app.runtime_config import config as runtime_config
+        from shared.config import LocalWhisperConfig
+
+        cfg = runtime_config.model_copy(deep=True)
+        cfg.whisper = LocalWhisperConfig(model="base")
+        _apply_whisper_language_override(cfg)
+
+        assert cfg.whisper.language == "de"

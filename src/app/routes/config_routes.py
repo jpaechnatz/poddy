@@ -515,6 +515,7 @@ def _strip_env_overridden_fields(
             "whisper.timeout_sec",
             "whisper.chunksize_mb",
             "whisper.max_retries",
+            "whisper.language",
         ]
         for field_path in whisper_field_paths:
             field_key = field_path.split(".", 1)[1]
