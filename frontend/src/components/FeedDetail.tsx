@@ -292,6 +292,17 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
     },
   });
 
+  const markBacklogSeenMutation = useMutation({
+    mutationFn: () => feedsApi.markBacklogSeen(currentFeed.id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['episodes', currentFeed.id] });
+      toast.success(data?.message ?? 'Backlog marked as seen');
+    },
+    onError: () => {
+      toast.error('Could not mark the backlog as seen');
+    },
+  });
+
   const refreshFeedMutation = useMutation({
     mutationFn: () => feedsApi.refreshFeed(currentFeed.id),
     onSuccess: (data) => {
@@ -854,6 +865,19 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted }: FeedDetailP
                         >
                           <span className="text-red-600">⛔</span>
                           Disable all episodes
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            markBacklogSeenMutation.mutate();
+                            setShowMenu(false);
+                          }}
+                          disabled={markBacklogSeenMutation.isPending || totalCount === 0}
+                          title="Stop processing existing unprocessed episodes; new episodes are still processed automatically"
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <span className="text-gray-600">👁</span>
+                          Mark backlog as seen
                         </button>
                       </>
                       )}

@@ -41,3 +41,18 @@ def test_whitelist_latest_for_first_member_enqueues_when_enabled(monkeypatch):
         requested_by_user_id=11,
         billing_user_id=11,
     )
+
+
+def test_first_member_whitelists_nothing_when_archive_count_is_zero(monkeypatch):
+    monkeypatch.setattr("app.feeds._should_auto_whitelist_new_posts", lambda feed: True)
+    monkeypatch.setattr(
+        "app.runtime_config.config.number_of_episodes_to_whitelist_from_archive_of_new_feed",
+        0,
+        raising=False,
+    )
+    mock_writer = mock.MagicMock()
+    monkeypatch.setattr("app.routes.feed_utils.writer_client", mock_writer)
+
+    whitelist_latest_for_first_member(cast(Feed, SimpleNamespace(id=5)), 11)
+
+    mock_writer.action.assert_not_called()

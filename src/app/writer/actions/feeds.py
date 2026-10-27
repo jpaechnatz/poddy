@@ -264,18 +264,41 @@ def unwhitelist_excluded_posts_action(params: dict[str, Any]) -> dict[str, Any]:
     if feed is None:
         return {"updated_count": 0}
 
+    updated = _unwhitelist_unprocessed(
+        feed, lambda post: is_title_excluded(feed, post.title)
+    )
+    return {"updated_count": len(updated)}
+
+
+def mark_backlog_seen_action(params: dict[str, Any]) -> dict[str, Any]:
+    """Mark the feed's current backlog as seen: un-whitelist unprocessed posts.
+
+    Processed episodes stay in the feed. Episodes published later are still
+    auto-whitelisted by the refresh (they are newer than every known post).
+    """
+    feed_id = params.get("feed_id")
+    if not feed_id:
+        raise ValueError("feed_id is required")
+    feed = db.session.get(Feed, int(feed_id))
+    if feed is None:
+        return {"updated_count": 0, "post_guids": []}
+    updated = _unwhitelist_unprocessed(feed, lambda _post: True)
+    return {"updated_count": len(updated), "post_guids": updated}
+
+
+def _unwhitelist_unprocessed(feed: Feed, should_unwhitelist: Any) -> list[str]:
     candidates = Post.query.filter(
         Post.feed_id == feed.id,
         Post.whitelisted.is_(True),
         Post.processed_audio_path.is_(None),
     ).all()
-    updated = 0
+    updated: list[str] = []
     for post in candidates:
-        if is_title_excluded(feed, post.title):
+        if should_unwhitelist(post):
             post.whitelisted = False
-            updated += 1
+            updated.append(post.guid)
     db.session.flush()
-    return {"updated_count": updated}
+    return updated
 
 
 def toggle_whitelist_all_for_feed_action(params: dict[str, Any]) -> dict[str, Any]:

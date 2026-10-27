@@ -715,6 +715,42 @@ def _whitelist_counts(feed_id: int) -> tuple[int, int]:
     return total, whitelisted
 
 
+@post_bp.route("/api/feeds/<int:feed_id>/mark-backlog-seen", methods=["POST"])
+def api_mark_backlog_seen(feed_id: int) -> ResponseReturnValue:
+    """Stop processing the current backlog; only new episodes get processed.
+
+    Un-whitelists every unprocessed episode and cancels its queued or running
+    jobs. Admin only (like toggle-whitelist-all).
+    """
+    feed = Feed.query.get_or_404(feed_id)
+
+    _, error = require_admin("mark the backlog as seen")
+    if error:
+        return error
+
+    result = writer_client.action("mark_backlog_seen", {"feed_id": feed.id}, wait=True)
+    if not result or not result.success:
+        return (
+            flask.jsonify({"error": "Database busy, please retry"}),
+            503,
+        )
+    data = result.data or {}
+    post_guids = [str(guid) for guid in data.get("post_guids") or []]
+    jobs_manager = get_jobs_manager()
+    for guid in post_guids:
+        try:
+            jobs_manager.cancel_post_jobs(guid)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not cancel jobs for %s: %s", guid, exc)
+
+    return flask.jsonify(
+        {
+            "message": f"Marked {len(post_guids)} episodes as seen",
+            "updated_count": len(post_guids),
+        }
+    )
+
+
 @post_bp.route("/api/feeds/<int:feed_id>/toggle-whitelist-all", methods=["POST"])
 def api_toggle_whitelist_all(feed_id: int) -> ResponseReturnValue:
     """Intelligently toggle whitelist status for all posts in a feed.

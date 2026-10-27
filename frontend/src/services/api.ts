@@ -135,6 +135,11 @@ export const feedsApi = {
     return response.data;
   },
 
+  markBacklogSeen: async (feedId: number): Promise<{ message: string; updated_count: number }> => {
+    const response = await api.post(`/api/feeds/${feedId}/mark-backlog-seen`);
+    return response.data;
+  },
+
   joinFeed: async (feedId: number): Promise<Feed> => {
     const response = await api.post(`/api/feeds/${feedId}/join`);
     return response.data;

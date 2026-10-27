@@ -47,8 +47,19 @@ def whitelist_latest_for_first_member(
     """When a feed goes from 0→1 members, whitelist and process the latest post."""
     # Respect global/per-feed whitelist settings; skip if auto-whitelist is disabled.
     from app.feeds import _should_auto_whitelist_new_posts
+    from app.runtime_config import config as runtime_config
 
     if not _should_auto_whitelist_new_posts(feed):
+        return
+    # "0 episodes from the archive" means: start with only new episodes.
+    if (
+        getattr(
+            runtime_config,
+            "number_of_episodes_to_whitelist_from_archive_of_new_feed",
+            1,
+        )
+        == 0
+    ):
         return
 
     try:
