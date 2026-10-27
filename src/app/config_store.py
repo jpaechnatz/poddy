@@ -586,6 +586,12 @@ def apply_openrouter_env_preset() -> None:
     key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
     if not key:
         return
+    if "hier-deinen-key" in key or key.endswith("..."):
+        logger.error(
+            "OPENROUTER_API_KEY still contains the placeholder from "
+            ".env.local.example; enter your key from https://openrouter.ai/keys"
+        )
+        return
     preset = {
         "WHISPER_TYPE": "remote",
         "WHISPER_REMOTE_API_KEY": key,

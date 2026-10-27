@@ -106,3 +106,13 @@ def test_whisper_language_env_sets_default_language(app: Any, monkeypatch: Any) 
         monkeypatch.setenv("WHISPER_LANGUAGE", "klingonisch")
         hydrate_runtime_config_inplace()  # invalid value is ignored, not fatal
         assert getattr(runtime_config.whisper, "language", None) != "klingonisch"
+
+
+def test_placeholder_key_from_example_is_ignored(monkeypatch: Any) -> None:
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-hier-deinen-key-eintragen")
+
+    apply_openrouter_env_preset()
+
+    assert os.environ.get("LLM_API_KEY") == ""
+    assert os.environ.get("WHISPER_REMOTE_API_KEY") == ""
