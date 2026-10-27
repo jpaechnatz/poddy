@@ -116,10 +116,10 @@ def _parse_optional_feed_string(
     return value, None
 
 
-def _collect_optional_text_settings(
+def _collect_optional_settings(
     payload: dict[str, Any], updates: dict[str, Any]
 ) -> ResponseReturnValue | None:
-    """Validate the per-feed string settings and add them to updates."""
+    """Validate the simple per-feed settings and add them to updates."""
     filter_strings, error_response = _parse_optional_feed_string(
         payload, "chapter_filter_strings"
     )
@@ -136,6 +136,13 @@ def _collect_optional_text_settings(
     if exclude_strings is not _MISSING:
         cleaned = exclude_strings.strip() if isinstance(exclude_strings, str) else ""
         updates["episode_title_exclude_strings"] = cleaned or None
+
+    for field_name in ("trim_silence", "normalize_loudness"):
+        value, error_response = _parse_optional_feed_bool(payload, field_name)
+        if error_response is not None:
+            return error_response
+        if value is not _MISSING:
+            updates[field_name] = value
     return None
 
 
@@ -164,7 +171,7 @@ def _build_feed_settings_updates(
             )
         updates["ad_detection_strategy"] = strategy
 
-    error_response = _collect_optional_text_settings(payload, updates)
+    error_response = _collect_optional_settings(payload, updates)
     if error_response is not None:
         return None, error_response
 
@@ -1129,6 +1136,8 @@ def _serialize_feed(
         "episode_title_exclude_strings": getattr(
             feed, "episode_title_exclude_strings", None
         ),
+        "trim_silence": bool(getattr(feed, "trim_silence", False)),
+        "normalize_loudness": bool(getattr(feed, "normalize_loudness", False)),
         "enable_llm_chapter_fallback_tagging": getattr(
             feed, "enable_llm_chapter_fallback_tagging", None
         ),

@@ -53,6 +53,10 @@ export default function FeedSettingsModal({
   const [excludeStrings, setExcludeStrings] = useState(
     feed.episode_title_exclude_strings ?? ''
   );
+  const [trimSilence, setTrimSilence] = useState(feed.trim_silence === true);
+  const [normalizeLoudness, setNormalizeLoudness] = useState(
+    feed.normalize_loudness === true
+  );
 
   useEffect(() => {
     setStrategy(feed.ad_detection_strategy || 'llm');
@@ -73,6 +77,8 @@ export default function FeedSettingsModal({
     );
     setLanguageOverride(feed.language ?? '');
     setExcludeStrings(feed.episode_title_exclude_strings ?? '');
+    setTrimSilence(feed.trim_silence === true);
+    setNormalizeLoudness(feed.normalize_loudness === true);
   }, [feed, llmChapterFallbackGlobalDefault]);
 
   const updateMutation = useMutation({
@@ -133,6 +139,14 @@ export default function FeedSettingsModal({
 
     if (excludeStrings.trim() !== currentExcludeStrings) {
       settings.episode_title_exclude_strings = excludeStrings.trim() || null;
+    }
+
+    if (trimSilence !== (feed.trim_silence === true)) {
+      settings.trim_silence = trimSilence;
+    }
+
+    if (normalizeLoudness !== (feed.normalize_loudness === true)) {
+      settings.normalize_loudness = normalizeLoudness;
     }
 
     if (Object.keys(settings).length === 0) {
@@ -319,6 +333,34 @@ export default function FeedSettingsModal({
                 this setting is locked on.
               </p>
             )}
+          </div>
+
+          <div>
+            <span className="block text-sm font-medium text-gray-700 mb-2">
+              Audio polishing
+            </span>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={trimSilence}
+                onChange={(e) => setTrimSilence(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Shorten long silences
+            </label>
+            <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={normalizeLoudness}
+                onChange={(e) => setNormalizeLoudness(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Normalize loudness (-16 LUFS)
+            </label>
+            <p className="text-xs text-gray-500 mt-1">
+              Applies to newly processed episodes. Pauses longer than 2 seconds
+              are shortened; chapters are moved to match.
+            </p>
           </div>
 
           <div className="border-t border-gray-200" />

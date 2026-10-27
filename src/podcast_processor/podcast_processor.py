@@ -20,6 +20,7 @@ from podcast_processor.audio import (
     get_audio_duration_ms,
     prepend_clip,
 )
+from podcast_processor.audio_polish import PolishOptions, polish_audio
 from podcast_processor.audio_processor import AudioProcessor
 from podcast_processor.chapter_ad_detector import (
     ChapterAdDetector,
@@ -33,7 +34,7 @@ from podcast_processor.chapter_fallback import (
     resolve_llm_path_chapters,
 )
 from podcast_processor.chapter_filter import parse_filter_strings
-from podcast_processor.chapter_reader import read_chapters
+from podcast_processor.chapter_reader import Chapter, read_chapters
 from podcast_processor.chapter_writer import (
     recalculate_chapter_times,
     write_adjusted_chapters,
@@ -905,6 +906,15 @@ class PodcastProcessor:
         """
         Finalize processing: update database and mark job complete.
         """
+        polish_options = self._polish_options(getattr(post, "feed", None))
+        if polish_options.enabled:
+            self.status_manager.update_job_status(
+                job, "running", 4, "Polishing audio", 95.0
+            )
+            silence_windows = polish_audio(processed_audio_path, polish_options)
+            if silence_windows and chapter_data is not None:
+                chapter_data = _shift_chapter_data(chapter_data, silence_windows)
+
         unprocessed_audio_path = post.unprocessed_audio_path
         if unprocessed_audio_path and os.path.exists(str(unprocessed_audio_path)):
             # Restore cover art, comments and links that ffmpeg drops.
@@ -937,6 +947,15 @@ class PodcastProcessor:
         # Mark job complete
         self.status_manager.update_job_status(
             job, "completed", 4, "Processing complete", 100.0
+        )
+
+    @staticmethod
+    def _polish_options(feed: Any | None) -> PolishOptions:
+        if feed is None:
+            return PolishOptions()
+        return PolishOptions(
+            trim_silence=bool(getattr(feed, "trim_silence", False)),
+            normalize_loudness=bool(getattr(feed, "normalize_loudness", False)),
         )
 
     def _publish_without_ad_removal(
@@ -1354,3 +1373,36 @@ class PodcastProcessor:
 
 class ProcessorException(Exception):
     """Exception raised for podcast processing errors."""
+
+
+def _shift_chapter_data(
+    chapter_data: str, removed_windows: list[tuple[float, float]]
+) -> str:
+    """Move chapter_data output times past audio removed after it was built."""
+    try:
+        data = json.loads(chapter_data)
+        entries = data.get("chapters_for_output")
+    except (ValueError, AttributeError):
+        return chapter_data
+    if not isinstance(entries, list):
+        return chapter_data
+
+    chapters = [
+        Chapter(
+            element_id=str(index),
+            title=str(entry.get("title", "")),
+            start_time_ms=round(float(entry.get("start_time", 0.0)) * 1000),
+            end_time_ms=round(float(entry.get("end_time", 0.0)) * 1000),
+        )
+        for index, entry in enumerate(entries)
+        if isinstance(entry, dict)
+    ]
+    data["chapters_for_output"] = [
+        {
+            "title": ch.title,
+            "start_time": round(ch.start_time_ms / 1000.0, 1),
+            "end_time": round(ch.end_time_ms / 1000.0, 1),
+        }
+        for ch in recalculate_chapter_times(chapters, removed_windows)
+    ]
+    return json.dumps(data)
