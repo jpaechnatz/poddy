@@ -686,6 +686,12 @@ def update_feed_settings_endpoint(feed_id: int) -> ResponseReturnValue:
             500,
         )
 
+    if updates.get("episode_title_exclude_strings"):
+        # Stop queued/future processing of episodes the new filter excludes.
+        writer_client.action(
+            "unwhitelist_excluded_posts", {"feed_id": feed_id}, wait=True
+        )
+
     # The writer may commit in a separate process/session; expire local state so the
     # response reflects the newly persisted values instead of any cached identity-map
     # object loaded earlier in this request.

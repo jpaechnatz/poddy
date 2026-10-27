@@ -250,6 +250,34 @@ def whitelist_latest_post_for_feed_action(params: dict[str, Any]) -> dict[str, A
     return {"updated": True, "post_guid": latest.guid}
 
 
+def unwhitelist_excluded_posts_action(params: dict[str, Any]) -> dict[str, Any]:
+    """Un-whitelist unprocessed posts that the feed's title filter excludes.
+
+    Without this, the episodes whitelisted when the feed was added (before a
+    filter could be set) would still be downloaded, transcribed and sent to
+    the LLM.
+    """
+    feed_id = params.get("feed_id")
+    if not feed_id:
+        raise ValueError("feed_id is required")
+    feed = db.session.get(Feed, int(feed_id))
+    if feed is None:
+        return {"updated_count": 0}
+
+    candidates = Post.query.filter(
+        Post.feed_id == feed.id,
+        Post.whitelisted.is_(True),
+        Post.processed_audio_path.is_(None),
+    ).all()
+    updated = 0
+    for post in candidates:
+        if is_title_excluded(feed, post.title):
+            post.whitelisted = False
+            updated += 1
+    db.session.flush()
+    return {"updated_count": updated}
+
+
 def toggle_whitelist_all_for_feed_action(params: dict[str, Any]) -> dict[str, Any]:
     feed_id = params.get("feed_id")
     new_status = params.get("new_status")

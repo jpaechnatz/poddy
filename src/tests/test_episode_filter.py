@@ -11,7 +11,10 @@ from app.feeds import _should_whitelist_new_post, generate_feed_xml
 from app.models import Feed, Post
 from app.routes.feed_routes import feed_bp
 from app.runtime_config import config as runtime_config
-from app.writer.actions.feeds import whitelist_latest_post_for_feed_action
+from app.writer.actions.feeds import (
+    unwhitelist_excluded_posts_action,
+    whitelist_latest_post_for_feed_action,
+)
 
 
 def test_title_match_is_case_insensitive_substring() -> None:
@@ -135,6 +138,10 @@ def test_settings_store_and_clear_exclude_strings(app: Any) -> None:
         )
 
     assert ok.status_code == 200
+    # Saving a filter un-whitelists matching episodes; clearing it does not.
+    writer.action.assert_called_once_with(
+        "unwhitelist_excluded_posts", {"feed_id": feed_id}, wait=True
+    )
     assert ok.get_json()["episode_title_exclude_strings"] == "Stammtisch"
     assert cleared.get_json()["episode_title_exclude_strings"] is None
     assert seen == [
@@ -152,3 +159,34 @@ def test_settings_reject_non_string_exclude_strings(app: Any) -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_saving_filter_unwhitelists_only_unprocessed_matches(app: Any) -> None:
+    with app.app_context():
+        feed = Feed(
+            rss_url="http://example.com/rk3",
+            title="RK",
+            episode_title_exclude_strings="Stammtisch",
+        )
+        db.session.add(feed)
+        db.session.commit()
+        main, queued = _add_posts(feed)
+        main.whitelisted = True
+        queued.whitelisted = True
+        done = Post(
+            feed_id=feed.id,
+            title="Stammtisch 400",
+            guid="done",
+            download_url="http://example.com/done.mp3",
+            whitelisted=True,
+            processed_audio_path="/tmp/done.mp3",
+        )
+        db.session.add(done)
+        db.session.commit()
+
+        result = unwhitelist_excluded_posts_action({"feed_id": feed.id})
+
+        assert result == {"updated_count": 1}
+        assert queued.whitelisted is False
+        assert main.whitelisted is True
+        assert done.whitelisted is True  # already processed: left alone
