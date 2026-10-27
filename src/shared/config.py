@@ -67,6 +67,8 @@ class GroqWhisperConfig(BaseModel):
 class LocalWhisperConfig(BaseModel):
     whisper_type: Literal["local"] = "local"
     model: str = DEFAULTS.WHISPER_LOCAL_MODEL
+    # Runtime-only (WHISPER_LANGUAGE); not stored in the database.
+    language: str = DEFAULTS.WHISPER_REMOTE_LANGUAGE
 
 
 class Config(BaseModel):

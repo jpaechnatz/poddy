@@ -42,6 +42,17 @@ sys.modules["whisper"] = whisper_mock
 sys.modules["torch"] = torch_mock
 
 
+@pytest.fixture(autouse=True)
+def _no_provider_presets_from_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a developer's exported OpenRouter/language settings out of tests.
+
+    The OpenRouter preset writes os.environ; with OPENROUTER_API_KEY exported
+    in the shell it would change every test that hydrates the config.
+    """
+    for name in ("OPENROUTER_API_KEY", "WHISPER_LANGUAGE"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def app() -> Generator[Flask, None, None]:
     """Create a Flask app for testing."""

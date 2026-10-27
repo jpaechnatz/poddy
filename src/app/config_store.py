@@ -592,15 +592,32 @@ def apply_openrouter_env_preset() -> None:
             ".env.local.example; enter your key from https://openrouter.ai/keys"
         )
         return
-    preset = {
-        "WHISPER_TYPE": "remote",
-        "WHISPER_REMOTE_API_KEY": key,
-        "WHISPER_REMOTE_BASE_URL": DEFAULTS.OPENROUTER_BASE_URL,
-        "WHISPER_REMOTE_MODEL": DEFAULTS.OPENROUTER_TRANSCRIBE_MODEL,
-        "WHISPER_REMOTE_CHUNKSIZE_MB": str(DEFAULTS.OPENROUTER_CHUNKSIZE_MB),
-        "LLM_API_KEY": key,
-        "LLM_MODEL": DEFAULTS.OPENROUTER_LLM_MODEL,
-    }
+
+    def _env(name: str) -> str:
+        return (os.environ.get(name) or "").strip()
+
+    preset: dict[str, str] = {}
+    # Transcription: only when no other whisper backend/endpoint is chosen.
+    whisper_type = _env("WHISPER_TYPE").lower()
+    remote_base = _env("WHISPER_REMOTE_BASE_URL").rstrip("/")
+    if whisper_type in ("", "remote") and remote_base in (
+        "",
+        DEFAULTS.OPENROUTER_BASE_URL,
+    ):
+        preset.update(
+            {
+                "WHISPER_TYPE": "remote",
+                "WHISPER_REMOTE_API_KEY": key,
+                "WHISPER_REMOTE_BASE_URL": DEFAULTS.OPENROUTER_BASE_URL,
+                "WHISPER_REMOTE_MODEL": DEFAULTS.OPENROUTER_TRANSCRIBE_MODEL,
+                "WHISPER_REMOTE_CHUNKSIZE_MB": str(DEFAULTS.OPENROUTER_CHUNKSIZE_MB),
+            }
+        )
+    # LLM: only when no model is set or the model is an OpenRouter one, so a
+    # Groq/OpenAI model keeps its own key (and startup key checks pass).
+    llm_model = _env("LLM_MODEL")
+    if not llm_model or llm_model.startswith("openrouter/"):
+        preset.update({"LLM_API_KEY": key, "LLM_MODEL": DEFAULTS.OPENROUTER_LLM_MODEL})
     applied = []
     for name, value in preset.items():
         if not (os.environ.get(name) or "").strip():
@@ -958,7 +975,13 @@ def _apply_whisper_language_override(cfg: PydanticConfig) -> None:
     from app.whisper_languages import normalize_whisper_language
 
     raw = (os.environ.get("WHISPER_LANGUAGE") or "").strip().lower()
-    if not raw or cfg.whisper is None or not hasattr(cfg.whisper, "language"):
+    if not raw or cfg.whisper is None:
+        return
+    if not hasattr(cfg.whisper, "language"):
+        logger.warning(
+            "WHISPER_LANGUAGE is not used by whisper type %s",
+            getattr(cfg.whisper, "whisper_type", None),
+        )
         return
     try:
         language = normalize_whisper_language(raw)

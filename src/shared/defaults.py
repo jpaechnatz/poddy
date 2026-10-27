@@ -31,7 +31,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_TRANSCRIBE_MODEL = "openai/whisper-large-v3-turbo"
 # "~...-latest" is an OpenRouter alias for the newest DeepSeek Flash model.
 OPENROUTER_LLM_MODEL = "openrouter/~deepseek/deepseek-flash-latest"
-# OpenRouter caps uploads at 25 MB and upstream processing at 60 s.
+# OpenRouter caps uploads at 25 MB and upstream processing time at 60 s.
 OPENROUTER_CHUNKSIZE_MB = 10
 
 WHISPER_GROQ_MODEL = "whisper-large-v3-turbo"

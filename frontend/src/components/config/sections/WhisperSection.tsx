@@ -26,6 +26,7 @@ export default function WhisperSection() {
   const whisperTimeoutReadOnly = isFieldReadOnly('whisper.timeout_sec');
   const whisperChunksizeReadOnly = isFieldReadOnly('whisper.chunksize_mb');
   const whisperMaxRetriesReadOnly = isFieldReadOnly('whisper.max_retries');
+  const whisperLanguageReadOnly = isFieldReadOnly('whisper.language');
 
   const whisperApiKeyPreview =
     pending?.whisper?.whisper_type === 'remote' || pending?.whisper?.whisper_type === 'groq'
@@ -141,12 +142,13 @@ export default function WhisperSection() {
                 disabled={whisperBaseUrlReadOnly}
               />
             </Field>
-            <Field label="Language">
+            <Field label="Language" envMeta={getEnvHint('whisper.language')}>
               <input
-                className="input"
+                className={inputClass(whisperLanguageReadOnly)}
                 type="text"
                 value={(pending?.whisper as { language?: string })?.language || 'en'}
                 onChange={(e) => setField(['whisper', 'language'], e.target.value)}
+                disabled={whisperLanguageReadOnly}
                 placeholder="en, de, … or auto"
               />
             </Field>
@@ -199,12 +201,13 @@ export default function WhisperSection() {
                 disabled={whisperModelReadOnly}
               />
             </Field>
-            <Field label="Language">
+            <Field label="Language" envMeta={getEnvHint('whisper.language')}>
               <input
-                className="input"
+                className={inputClass(whisperLanguageReadOnly)}
                 type="text"
                 value={(pending?.whisper as { language?: string })?.language || 'en'}
                 onChange={(e) => setField(['whisper', 'language'], e.target.value)}
+                disabled={whisperLanguageReadOnly}
                 placeholder="en, de, … or auto"
               />
             </Field>
