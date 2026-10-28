@@ -1,6 +1,6 @@
 # How To Run: Ultimate Beginner's Guide
 
-This guide will walk you through setting up Podly from scratch using Docker. Podly creates ad-free RSS feeds for podcasts by automatically detecting and removing advertisement segments.
+This guide walks you through setting up Poddy from scratch using Docker. Poddy creates ad-free RSS feeds for podcasts by automatically detecting and removing advertisement segments.
 
 ## Highly Recommend!
 
@@ -15,32 +15,32 @@ Paste one of the prompts below into the chat box.
 If you don't have the repo downloaded:
 
 ```
-Help me install docker and run Podly https://github.com/jpaechnatz/poddy
+Help me install docker and run Poddy https://github.com/jpaechnatz/poddy
 After the project is cloned, help me:
 - install docker & docker compose
 - copy `.env.local.example` to `.env.local` and fill in the API keys
 - run `docker compose -f compose.pi.yml up -d --build` (builds this fork; do not use the prebuilt upstream images)
-- configure the app via the web UI at http://localhost:5001/config
+- configure the app via the web UI at http://localhost:5001/config (Settings)
 Be sure to check if a dependency is already installed before downloading.
 We recommend Docker because installing ffmpeg & local whisper can be difficult.
 The lite Docker image includes ffmpeg and uses remote transcription (OpenRouter, Groq or another OpenAI-compatible API).
-Podly works with many different LLMs, it does not require an OpenAI key.
+Poddy works with many different LLMs, it does not require an OpenAI key.
 Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
 If you do have the repo pulled, open this file and prompt:
 
 ```
-Review this project, follow this guide and start Podly on my computer.
+Review this project, follow this guide and start Poddy on my computer.
 Briefly, help me:
 - install docker & docker compose
 - copy `.env.local.example` to `.env.local` and fill in the API keys
 - run `docker compose -f compose.pi.yml up -d --build` (builds this fork; do not use the prebuilt upstream images)
-- configure the app via the web UI at http://localhost:5001/config
+- configure the app via the web UI at http://localhost:5001/config (Settings)
 Be sure to check if a dependency is already installed before downloading.
 We recommend docker because installing ffmpeg & local whisper can be difficult.
 The lite Docker image includes ffmpeg and uses remote transcription (OpenRouter, Groq or another OpenAI-compatible API).
-Podly works with many different LLMs; it does not need to work with OpenAI.
+Poddy works with many different LLMs; it does not need to work with OpenAI.
 Check your work by retrieving the index page from localhost:5001 at the end.
 ```
 
@@ -88,19 +88,21 @@ docker compose version
 
 You should see version information for both commands.
 
-### 2. Get an OpenAI API Key (if using OpenAI)
+### Get an API key
 
-1. Go to [OpenAI's API platform](https://platform.openai.com/)
-2. Sign up for an account or log in if you already have one
-3. Navigate to the [API Keys section](https://platform.openai.com/api-keys)
-4. Click "Create new secret key"
-5. Give it a name (e.g., "Podly")
-6. **Important**: Copy the key immediately and save it somewhere safe - you won't be able to see it again!
-7. Your API key will look something like: `sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+The simplest setup is one [OpenRouter](https://openrouter.ai/keys) key for both
+transcription and the LLM:
 
-> **Note**: OpenAI API usage requires payment. Make sure to set up billing and usage limits in your OpenAI account to avoid unexpected charges.
+1. Create an account at [openrouter.ai](https://openrouter.ai/) and add credit.
+2. Create a key under [Keys](https://openrouter.ai/keys) and copy it right away.
+3. Put it into `.env.local` as `OPENROUTER_API_KEY=sk-or-v1-...` (see below).
 
-## Setup Podly
+Groq, OpenAI and other OpenAI-compatible services work too; the commented
+sections in `.env.local.example` show the lines for each.
+
+> **Note**: API usage costs money. Set a spending limit at your provider to avoid surprises.
+
+## Setup Poddy
 
 ### Download the Project
 
@@ -109,7 +111,7 @@ git clone https://github.com/jpaechnatz/poddy.git
 cd poddy
 ```
 
-## Running Podly
+## Running Poddy
 
 ### Run the Application via Docker
 
@@ -133,25 +135,26 @@ Raspberry Pi specifics: [raspberry_pi.md](raspberry_pi.md).
 
 The Docker image reads environment variables from `.env.local` files or your shell. To require login:
 
-1. Export the variables before running Podly, or add them to `config/.env.local`:
+1. Add the variables to `.env.local` in the project root (no quotes, no spaces around `=`):
 
-```bash
-export REQUIRE_AUTH=true
-export PODLY_ADMIN_USERNAME='podly_admin'
-export PODLY_ADMIN_PASSWORD='SuperSecurePass!2024'
-export PODLY_SECRET_KEY='replace-with-a-strong-64-char-secret'
+```ini
+REQUIRE_AUTH=true
+PODLY_ADMIN_USERNAME=admin
+PODLY_ADMIN_PASSWORD=a-long-password
+# generate with: openssl rand -hex 32
+PODLY_SECRET_KEY=
 ```
 
-2. Start Podly as usual. On first boot with auth enabled and an empty database, the admin account is created automatically. If you are turning auth on for an existing volume, clear the `sqlite3.db` file so the bootstrap can succeed.
+2. Start Poddy as usual (`docker compose -f compose.pi.yml up -d`). On first boot with auth enabled and an empty database, the admin account is created automatically. If you are turning auth on for an existing volume, clear the `sqlite3.db` file so the bootstrap can succeed.
 
-3. Sign in at `http://localhost:5001`, then visit the Config page to change your password, add users, and copy RSS URLs with the "Copy protected feed" button. Podly generates feed-specific access tokens and embeds them in the link so podcast players can subscribe without exposing your main password. Remember to update your environment variables whenever you rotate the admin password.
+3. Sign in at `http://localhost:5001`, then open Settings to change your password and add users. Copy a feed's RSS URL with the "Subscribe to Poddy RSS" button. Poddy generates feed-specific access tokens and embeds them in the link so podcast players can subscribe without exposing your main password. Remember to update your environment variables whenever you rotate the admin password.
 
 ### First Run
 
 1. Docker will download and build the necessary image (this may take 5-15 minutes)
-2. Look for "Running on http://0.0.0.0:5001"
+2. Look for "Serving on http://0.0.0.0:5001" in `docker compose -f compose.pi.yml logs -f`
 3. Open your browser to `http://localhost:5001`
-4. Configure settings at `http://localhost:5001/config`
+4. Configure settings at `http://localhost:5001/config` (Settings)
    - Alternatively, set secrets via Docker env file `.env.local` in the project root and restart the container. See .env.local.example
 
 ## Advanced Options
@@ -172,19 +175,19 @@ docker compose -f compose.pi.yml build
 docker compose -f compose.pi.yml build --no-cache
 ```
 
-## Using Podly
+## Using Poddy
 
 ### Adding Your First Podcast
 
-1. In the web interface, look for an "Add Podcast" or similar button
-2. Paste the RSS feed URL of your podcast
-3. Podly will start processing new episodes automatically
-4. Processed episodes will have advertisements removed
+1. Optional, before adding feeds: set **Settings → Advanced → General → "Episodes to enable on new feeds"** to `0` if only episodes published from now on should be processed (default: the newest 1)
+2. Add a podcast: search for it by name or paste its RSS feed URL
+3. With "Auto-enable new episodes" on, Poddy processes new episodes automatically
+4. Per-feed options (ad detection strategy, title filter, loudness, transcripts) are behind the gear icon "Feed settings"; "Mark backlog as seen" in the feed menu skips the existing episodes
 
 ### Getting Your Ad-Free RSS Feed
 
-1. After adding a podcast, Podly will generate a new RSS feed URL
-2. Use this new URL in your podcast app instead of the original
+1. Open the feed and click "Subscribe to Poddy RSS" to copy its Poddy feed URL
+2. Add this URL in your podcast app ("add by URL") instead of the original
 3. Your podcast app will now download ad-free versions!
 
 ## Troubleshooting
@@ -201,37 +204,37 @@ docker compose -f compose.pi.yml build --no-cache
 
 ### "Permission denied" errors
 
-- On macOS/Linux, make sure the script is executable: `chmod +x run_podly_docker.sh`
+- On Linux, make sure you logged out and back in after adding yourself to the docker group
 - On Windows, try running Command Prompt as Administrator
 
-### OpenAI API errors
+### API errors (transcription or LLM)
 
-- Double-check your API key in the Config page at `/config`
-- Make sure you have billing set up in your OpenAI account
+- Double-check the key in `.env.local` or in Settings, then restart: `docker compose -f compose.pi.yml up -d`
+- Make sure your provider account has credit or billing set up
 - Check your usage limits haven't been exceeded
 
 ### Port 5001 already in use
 
 - Another application is using port 5001
-- **Docker users**: Either stop that application or modify the port in `compose.dev.cpu.yml` and `compose.yml`
-- **Native users**: Change the port in the Config page under App settings
+- **Docker users**: Either stop that application or change the left side of `5001:5001` under `ports:` in the compose file you use (e.g. `compose.pi.yml`)
+- **Native users**: Start with a different port via the `PORT` environment variable
 - To kill processes on that port run `lsof -i :5001 | grep LISTEN | awk '{print $2}' | xargs kill -9`
 
 ### Out of memory errors
 
 - Close other applications to free up RAM
-- Consider using `--cpu` flag if you have limited memory
+- Use the lite image (`compose.pi.yml`) with remote transcription instead of local Whisper
 
-## Stopping Podly
+## Stopping Poddy
 
 To stop the application:
 
 If you have launched it in the foreground by omitting the `-d` parameter:
-1. In the terminal where Podly is running, press `Ctrl+C`
+1. In the terminal where Poddy is running, press `Ctrl+C`
 2. Wait for the container to stop gracefully
 
 If you have launched it in the background using the `-d` parameter:
-1. In the terminal where Podly is running, execute `docker compose down`
+1. In the project folder, run `docker compose -f compose.pi.yml down` (use the same compose file you started with)
 2. Wait for the container to stop gracefully
 
 In both cases this output should appear to indicate that it has stopped:
@@ -242,12 +245,12 @@ In both cases this output should appear to indicate that it has stopped:
  ✔ Network podly-pure-podcasts-network  Removed
 ```
 
-## Upgrading Podly
+## Upgrading Poddy
 
 To upgrade the application while you are in the terminal where it is running:
-1. [Stop it](#stopping-podly)
+1. [Stop it](#stopping-poddy)
 2. Execute `git pull`
-3. [Run it again](#running-podly)
+3. [Run it again with `--build`](#running-poddy)
 
 ## Getting Help
 
@@ -255,9 +258,9 @@ If you encounter issues, open an issue at https://github.com/jpaechnatz/poddy/is
 
 ## What's Next?
 
-Once you have Podly running:
+Once you have Poddy running:
 
 - Explore the web interface to add more podcasts
-- Configure settings in the Config page
-- Consider setting up automatic background processing
+- Fine-tune per-feed options with the gear icon "Feed settings"
+- Make it reachable from your phone: [raspberry_pi.md](raspberry_pi.md) covers Tailscale Funnel
 - Enjoy your ad-free podcasts!
