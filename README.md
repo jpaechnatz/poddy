@@ -57,7 +57,7 @@ schlanke „lite“-Variante (Transkription über einen externen Dienst wie
 OpenRouter oder Groq) und funktioniert auf dem Raspberry Pi (arm64) wie auf
 normalen PCs (x86_64).
 
-- **Raspberry Pi, OpenRouter/Voxtral, Tailscale Funnel:**
+- **Raspberry Pi, OpenRouter, Tailscale Funnel (Schritt für Schritt):**
   [docs/raspberry_pi.md](docs/raspberry_pi.md)
 - **Lokales Whisper, GPU, Entwicklung:**
   [docs/how_to_run_beginners.md](docs/how_to_run_beginners.md) und
