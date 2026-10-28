@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
+import { ChevronDownIcon } from '../../icons';
 import { costsApi } from '../../../services/api';
 import type { CostSummary, CallLog } from '../../../types';
+import { formatBackendDateTime } from '../../../utils/datetime';
+import { Section } from '../shared';
 
 function MonthSelector({
   year,
@@ -24,9 +27,10 @@ function MonthSelector({
           const d = new Date(year, month - 2);
           onChange(d.getFullYear(), d.getMonth() + 1);
         }}
-        className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100"
+        className="btn btn-secondary btn-icon btn-sm"
+        aria-label="Previous month"
       >
-        ‹
+        <ChevronDownIcon className="h-4 w-4 rotate-90" />
       </button>
       <span className="text-sm font-medium w-24 text-center">
         {months[month - 1]} {year}
@@ -36,9 +40,10 @@ function MonthSelector({
           const d = new Date(year, month);
           onChange(d.getFullYear(), d.getMonth() + 1);
         }}
-        className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100"
+        className="btn btn-secondary btn-icon btn-sm"
+        aria-label="Next month"
       >
-        ›
+        <ChevronDownIcon className="h-4 w-4 -rotate-90" />
       </button>
     </div>
   );
@@ -80,15 +85,8 @@ export default function CostsTab() {
   });
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-semibold text-gray-900">Platform Costs</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            <b>Platform logic:</b> ${costs?.cost_rate_per_hour ?? 0.04}/hr of processing | <b>User attribution:</b> Divided by subscribers
-          </p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <MonthSelector
           year={year}
           month={month}
@@ -97,32 +95,31 @@ export default function CostsTab() {
             setMonth(m);
           }}
         />
+        <p className="min-w-0 text-sm text-gray-600">
+          Priced at ${costs?.cost_rate_per_hour ?? 0.04}/hr of processing. User costs split each feed&apos;s cost across its subscribers.
+        </p>
       </div>
 
-      {/* Summary */}
       {costsLoading ? (
-        <div className="text-sm text-gray-500">Loading cost data…</div>
+        <div className="text-sm text-gray-600">Loading cost data…</div>
       ) : costs ? (
         <>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-            <div className="text-2xl font-bold text-indigo-700">
+          <Section title="Total for the month" stacked>
+            <div className="text-2xl font-semibold tabular-nums text-gray-900">
               ${costs.total_cost.toFixed(2)}
             </div>
-            <div className="text-sm text-gray-600 mt-1">Total processing cost this month</div>
-          </div>
+          </Section>
 
-          {/* Per-feed breakdown */}
-          <section>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3">Cost by Feed</h4>
+          <Section title="Cost by feed" stacked>
             {costs.feeds.length === 0 ? (
-              <p className="text-sm text-gray-500">No processed episodes this month.</p>
+              <p className="text-sm text-gray-600">No processed episodes this month.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full text-sm tabular-nums">
                   <thead>
                     <tr className="border-b border-gray-200">
                       <th className="text-left py-2 pr-4 font-medium text-gray-600">Feed</th>
-                      <th className="text-right py-2 pr-4 font-medium text-gray-600">Subs</th>
+                      <th className="text-right py-2 pr-4 font-medium text-gray-600">Subscribers</th>
                       <th className="text-right py-2 pr-4 font-medium text-gray-600">Episodes</th>
                       <th className="text-right py-2 font-medium text-gray-600">Cost</th>
                     </tr>
@@ -142,22 +139,20 @@ export default function CostsTab() {
                 </table>
               </div>
             )}
-          </section>
+          </Section>
 
-          {/* Per-user breakdown */}
-          <section>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3">Cost per User</h4>
+          <Section title="Cost by user" stacked>
             {costs.users.length === 0 ? (
-              <p className="text-sm text-gray-500">No users found.</p>
+              <p className="text-sm text-gray-600">No users found.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full text-sm tabular-nums">
                   <thead>
                     <tr className="border-b border-gray-200">
                       <th className="text-left py-2 pr-4 font-medium text-gray-600">User</th>
                       <th className="text-left py-2 pr-4 font-medium text-gray-600">Status</th>
                       <th className="text-right py-2 pr-4 font-medium text-gray-600">Feeds</th>
-                      <th className="text-right py-2 pr-4 font-medium text-gray-600">Sub $/mo</th>
+                      <th className="text-right py-2 pr-4 font-medium text-gray-600">Subscription $/month</th>
                       <th className="text-right py-2 font-medium text-gray-600">Cost</th>
                     </tr>
                   </thead>
@@ -168,8 +163,8 @@ export default function CostsTab() {
                         <td className="py-2 pr-4">
                           <span
                             className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${user.subscription_status === 'active'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-500'
+                              ? 'bg-green-50 text-green-700'
+                              : 'bg-gray-100 text-gray-600'
                               }`}
                           >
                             {user.subscription_status}
@@ -190,19 +185,17 @@ export default function CostsTab() {
                 </table>
               </div>
             )}
-          </section>
+          </Section>
         </>
       ) : null}
 
-      {/* API Call Log */}
-      <section>
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">API Call Log</h4>
+      <Section title="API call log" stacked>
         {callsLoading ? (
-          <div className="text-sm text-gray-500">Loading call log…</div>
+          <div className="text-sm text-gray-600">Loading call log…</div>
         ) : calls ? (
           <>
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-sm tabular-nums">
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-2 pr-4 font-medium text-gray-600">Model</th>
@@ -218,42 +211,41 @@ export default function CostsTab() {
                       <td className="py-2 pr-4">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${c.status === 'completed'
-                            ? 'bg-green-100 text-green-700'
+                            ? 'bg-green-50 text-green-700'
                             : c.status === 'failed'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-gray-100 text-gray-500'
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-gray-100 text-gray-600'
                             }`}
                         >
                           {c.status}
                         </span>
                       </td>
                       <td className="py-2 pr-4 text-right text-gray-600">{c.retry_attempts}</td>
-                      <td className="py-2 text-right text-gray-500 text-xs">
-                        {c.timestamp ? new Date(c.timestamp).toLocaleString() : '—'}
+                      <td className="py-2 text-right text-gray-600 text-xs whitespace-nowrap">
+                        {formatBackendDateTime(c.timestamp)}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {/* Pagination */}
             {calls.pages > 1 && (
-              <div className="flex items-center justify-between mt-3">
-                <span className="text-xs text-gray-500">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs tabular-nums text-gray-600">
                   Page {calls.page} of {calls.pages} ({calls.total} calls)
                 </span>
                 <div className="flex gap-2">
                   <button
                     disabled={calls.page <= 1}
                     onClick={() => setCallPage((p) => p - 1)}
-                    className="px-3 py-1 text-xs border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                    className="btn btn-secondary btn-sm"
                   >
                     Prev
                   </button>
                   <button
                     disabled={calls.page >= calls.pages}
                     onClick={() => setCallPage((p) => p + 1)}
-                    className="px-3 py-1 text-xs border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                    className="btn btn-secondary btn-sm"
                   >
                     Next
                   </button>
@@ -262,28 +254,26 @@ export default function CostsTab() {
             )}
           </>
         ) : null}
-      </section>
+      </Section>
 
-      {/* Cleanup utilities */}
-      <section>
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Cleanup Utilities</h4>
+      <Section title="Maintenance" collapsible stacked>
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => cleanupCancelledMutation.mutate()}
             disabled={cleanupCancelledMutation.isPending}
-            className="px-4 py-2 text-sm bg-yellow-50 border border-yellow-300 text-yellow-800 rounded hover:bg-yellow-100 disabled:opacity-50"
+            className="btn btn-secondary"
           >
             {cleanupCancelledMutation.isPending ? 'Removing…' : 'Remove cancelled-subscriber feeds'}
           </button>
           <button
             onClick={() => cleanupOrphanMutation.mutate()}
             disabled={cleanupOrphanMutation.isPending}
-            className="px-4 py-2 text-sm bg-red-50 border border-red-300 text-red-800 rounded hover:bg-red-100 disabled:opacity-50"
+            className="btn btn-secondary"
           >
             {cleanupOrphanMutation.isPending ? 'Removing…' : 'Remove orphan feeds (no subscribers)'}
           </button>
         </div>
-      </section>
+      </Section>
     </div>
   );
 }

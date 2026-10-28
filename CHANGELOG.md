@@ -1,3 +1,15 @@
+# [2.9.0](https://github.com/podly-pure-podcasts/podly_pure_podcasts/compare/v2.8.0...v2.9.0) (2026-10-27)
+
+
+### Bug Fixes
+
+* **frontend:** keep feed settings Save reachable on short screens ([318ce7e](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/318ce7ed7cb18162af52756e14cccc79e7c77d3f))
+
+
+### Features
+
+* **frontend:** refresh the UI, theming and motion ([8edb77a](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/8edb77aae4ab68f7026650865959c8593d0b60dd))
+
 # [2.8.0](https://github.com/podly-pure-podcasts/podly_pure_podcasts/compare/v2.7.14...v2.8.0) (2026-10-23)
 
 
