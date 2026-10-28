@@ -190,3 +190,41 @@ def test_whisper_language_applies_to_local_whisper(app: Any, monkeypatch: Any) -
         _apply_whisper_language_override(cfg)
 
         assert cfg.whisper.language == "de"
+
+
+def _active_example_lines() -> dict[str, str]:
+    """Uncommented KEY=value lines of .env.local.example."""
+    path = os.path.join(os.path.dirname(__file__), "..", "..", ".env.local.example")
+    values: dict[str, str] = {}
+    with open(path, encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if line and not line.startswith("#") and "=" in line:
+                name, value = line.split("=", 1)
+                values[name.strip()] = value.strip()
+    return values
+
+
+def test_example_quick_start_sets_up_openrouter_completely(monkeypatch: Any) -> None:
+    active = _active_example_lines()
+    assert set(active) == {
+        "OPENROUTER_API_KEY",
+        "LLM_MODEL",
+        "WHISPER_REMOTE_MODEL",
+        "WHISPER_LANGUAGE",
+    }
+    assert active["LLM_MODEL"] == DEFAULTS.OPENROUTER_LLM_MODEL
+    assert active["WHISPER_REMOTE_MODEL"] == DEFAULTS.OPENROUTER_TRANSCRIBE_MODEL
+
+    _clean_env(monkeypatch)
+    for name, value in active.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-real")
+
+    apply_openrouter_env_preset()
+
+    assert os.environ["WHISPER_TYPE"] == "remote"
+    assert os.environ["WHISPER_REMOTE_API_KEY"] == "sk-or-real"
+    assert os.environ["WHISPER_REMOTE_BASE_URL"] == DEFAULTS.OPENROUTER_BASE_URL
+    assert os.environ["LLM_API_KEY"] == "sk-or-real"
+    assert os.environ["LLM_MODEL"] == "openrouter/~deepseek/deepseek-flash-latest"

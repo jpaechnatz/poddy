@@ -35,18 +35,26 @@ openssl rand -hex 32      # Ausgabe kopieren, wird unten PODLY_SECRET_KEY
 nano .env.local
 ```
 
-Diese Zeilen eintragen bzw. das `#` davor entfernen. Den OpenRouter-Key legst
-du unter https://openrouter.ai/keys an (vorher Guthaben aufladen):
+Im Abschnitt SCHNELLSTART nur den OpenRouter-Key eintragen; KI-Modell,
+Transkriptionsmodell und Sprache sind dort schon gesetzt. Den Key legst du unter
+https://openrouter.ai/keys an (vorher Guthaben aufladen). Dazu bei ANMELDUNG
+und TAILSCALE das `#` vor diesen Zeilen entfernen und Werte eintragen:
 
 ```ini
+# SCHNELLSTART (schon vorhanden, nur Key ersetzen)
 OPENROUTER_API_KEY=sk-or-v1-...
+LLM_MODEL=openrouter/~deepseek/deepseek-flash-latest
+WHISPER_REMOTE_MODEL=openai/whisper-large-v3-turbo
 WHISPER_LANGUAGE=de
+
+# ANMELDUNG
 
 REQUIRE_AUTH=true
 PODLY_ADMIN_USERNAME=admin
 PODLY_ADMIN_PASSWORD=ein-langes-passwort
 PODLY_SECRET_KEY=<Ausgabe von openssl>
 
+# TAILSCALE
 PODLY_TRUSTED_PROXY=172.30.42.1
 ```
 
@@ -59,9 +67,12 @@ echo "PODDY_BIND_ADDRESS=127.0.0.1" > .env
 
 Was die Zeilen bewirken:
 
-- `OPENROUTER_API_KEY` richtet Transkription (`openai/whisper-large-v3-turbo`)
-  und KI (`~deepseek/deepseek-flash-latest`) über OpenRouter ein. Andere
-  Modelle, z. B. Voxtral, stehen kommentiert in `.env.local.example`.
+- `OPENROUTER_API_KEY` gilt für Transkription und KI zugleich.
+- `LLM_MODEL`: KI für Werbeerkennung, Kapitel und Zusammenfassungen. Der Alias
+  `~deepseek/deepseek-flash-latest` zeigt immer auf das neueste
+  DeepSeek-Flash-Modell. `WHISPER_REMOTE_MODEL`: Transkription mit Whisper
+  Large v3 Turbo. Alternativen, z. B. Voxtral, stehen kommentiert weiter unten
+  in der Datei; die Zeile im Schnellstart dann ersetzen, nicht doppelt eintragen.
 - `WHISPER_LANGUAGE=de`: Eine feste Sprache ist für einsprachige Podcasts die
   bessere Wahl; fremdsprachige Einspieler werden dann meist übersetzt. `auto`
   erkennt die Sprache je Abschnitt von etwa 10 Minuten und lohnt sich nur, wenn
