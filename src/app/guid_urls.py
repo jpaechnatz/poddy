@@ -23,8 +23,8 @@ def post_stream_path(guid: str) -> str:
     return f"/post/{encode_guid_for_url(guid)}.mp3"
 
 
-def post_transcript_path(guid: str) -> str:
-    return f"/post/{encode_guid_for_url(guid)}/transcript.vtt"
+def post_transcript_path(guid: str, fmt: str = "vtt") -> str:
+    return f"/post/{encode_guid_for_url(guid)}/transcript.{fmt}"
 
 
 def post_chapters_path(guid: str) -> str:

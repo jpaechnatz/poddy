@@ -433,6 +433,12 @@ def _aware_utc(value: datetime.datetime | None) -> datetime.datetime | None:
     return value.astimezone(datetime.UTC)
 
 
+# Bump when the rendered feed XML changes shape for unchanged data (e.g. a new
+# tag such as the SRT podcast:transcript), so cached clients refetch instead
+# of keeping a 304'd copy until the next episode.
+FEED_RENDER_VERSION = "2"
+
+
 def _compute_feed_etag(feed: Feed) -> str:
     """Build a strong ETag value (bare hash, unquoted) for `feed`'s state.
 
@@ -448,7 +454,8 @@ def _compute_feed_etag(feed: Feed) -> str:
     )
     last_changed = feed.last_changed_at or datetime.datetime.now(datetime.UTC)
     payload = (
-        f"{feed.id}:{last_changed.isoformat()}:{post_count or 0}:{max_post_id or 0}"
+        f"v{FEED_RENDER_VERSION}:{feed.id}:{last_changed.isoformat()}:"
+        f"{post_count or 0}:{max_post_id or 0}"
     )
     return hashlib.sha1(payload.encode("utf-8"), usedforsecurity=False).hexdigest()
 
@@ -470,7 +477,10 @@ def _compute_aggregate_etag(user: User | None) -> str:
         )
     last_changed = get_aggregate_feed_last_changed_at(user)
     user_id = user.id if user else 0
-    payload = f"agg:{user_id}:{last_changed.isoformat()}:{','.join(map(str, feed_ids))}"
+    payload = (
+        f"v{FEED_RENDER_VERSION}:agg:{user_id}:{last_changed.isoformat()}:"
+        f"{','.join(map(str, feed_ids))}"
+    )
     return hashlib.sha1(payload.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
@@ -482,9 +492,11 @@ def _client_has_current_version(
     Honors `If-None-Match` (preferred) and `If-Modified-Since` (legacy).
     `etag` is the bare digest (without surrounding quotes).
     """
-    # Gzipped responses carry a weak ETag, so match weak tags too.
-    if request.if_none_match and request.if_none_match.contains_weak(etag):
-        return True
+    # Gzipped responses carry a weak ETag, so match weak tags too. A client
+    # that sends If-None-Match is judged by it alone (RFC 9110 13.1.3), so a
+    # stale tag is not overruled by a still-recent If-Modified-Since.
+    if request.if_none_match:
+        return request.if_none_match.contains_weak(etag)
     if last_modified_aware is not None and request.if_modified_since is not None:
         # HTTP dates are second-resolution; drop microseconds before comparing.
         lm = last_modified_aware.replace(microsecond=0)

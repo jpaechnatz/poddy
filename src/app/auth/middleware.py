@@ -60,7 +60,7 @@ _TOKEN_PROTECTED_PATTERNS: tuple[re.Pattern[str], ...] = (
     # the GUID part matches across slashes up to the known route suffix.
     re.compile(r"^/api/posts/.+/(audio|download(?:/original)?)$"),
     re.compile(
-        r"^/post/.+(?:\.mp3|/original\.mp3|/transcript\.vtt|/chapters\.json"
+        r"^/post/.+(?:\.mp3|/original\.mp3|/transcript\.(?:vtt|srt)|/chapters\.json"
         r"|/chapter-images/\d+)$"
     ),
 )

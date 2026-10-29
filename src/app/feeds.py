@@ -20,7 +20,11 @@ from app.extensions import db
 from app.guid_urls import post_chapters_path, post_stream_path, post_transcript_path
 from app.models import Feed, Post, User, UserFeed
 from app.runtime_config import config
-from app.transcript_vtt import post_ids_with_transcripts, transcript_ready
+from app.transcript_vtt import (
+    TRANSCRIPT_FORMATS,
+    post_ids_with_transcripts,
+    transcript_ready,
+)
 from app.writer.client import writer_client
 from podcast_processor.audio import get_audio_duration_ms
 from podcast_processor.podcast_downloader import find_audio_link
@@ -637,14 +641,15 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
         pubDate: str | None,
         image_url: str | None = None,
         duration_seconds: int | None = None,
-        transcript_url: str | None = None,
+        transcript_urls: dict[str, str] | None = None,
         transcript_language: str | None = None,
         chapters_url: str | None = None,
         **kwargs: Any,
     ) -> None:
         self.image_url = image_url
         self.duration_seconds = duration_seconds
-        self.transcript_url = transcript_url
+        # Format ("vtt", "srt") -> URL, published in TRANSCRIPT_FORMATS order.
+        self.transcript_urls = transcript_urls or {}
         self.transcript_language = transcript_language
         self.chapters_url = chapters_url
         super().__init__(
@@ -664,12 +669,11 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
             handler.startElement("itunes:duration", {})
             handler.characters(_format_itunes_duration(self.duration_seconds))
             handler.endElement("itunes:duration")
-        if self.transcript_url:
-            attrs = {
-                "url": self.transcript_url,
-                "type": "text/vtt",
-                "rel": "captions",
-            }
+        for fmt, mime_type in TRANSCRIPT_FORMATS.items():
+            url = self.transcript_urls.get(fmt)
+            if not url:
+                continue
+            attrs = {"url": url, "type": mime_type, "rel": "captions"}
             if self.transcript_language:
                 attrs["language"] = self.transcript_language
             handler.startElement("podcast:transcript", attrs)
@@ -781,12 +785,15 @@ def feed_item(
 
     duration_seconds = _feed_item_duration_seconds(post)
 
-    transcript_url = None
+    transcript_urls: dict[str, str] = {}
     transcript_language = None
     if has_transcript and transcript_ready(post):
-        transcript_url = _append_feed_token_params(
-            f"{base_url}{post_transcript_path(post.guid)}"
-        )
+        transcript_urls = {
+            fmt: _append_feed_token_params(
+                f"{base_url}{post_transcript_path(post.guid, fmt)}"
+            )
+            for fmt in TRANSCRIPT_FORMATS
+        }
         feed = getattr(post, "feed", None)
         transcript_language = getattr(feed, "language", None) if feed else None
         if transcript_language == "auto":
@@ -810,7 +817,7 @@ def feed_item(
         pubDate=_format_pub_date(post.release_date),
         image_url=post.image_url,
         duration_seconds=duration_seconds,
-        transcript_url=transcript_url,
+        transcript_urls=transcript_urls,
         transcript_language=transcript_language,
         chapters_url=chapters_url,
     )
