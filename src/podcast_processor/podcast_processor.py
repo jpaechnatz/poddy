@@ -1074,6 +1074,7 @@ class PodcastProcessor:
             openai_base_url=getattr(self.config, "openai_base_url", None),
             timeout_sec=int(getattr(self.config, "openai_timeout", 300)),
             language=language,
+            post_id=post_id,
         )
 
     @staticmethod

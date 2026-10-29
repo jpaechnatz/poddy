@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from typing import Any
 
@@ -315,7 +316,7 @@ def try_update_model_call(
     error_message: str | None,
     logger: logging.Logger,
     log_prefix: str,
-    usage: dict[str, int | None] | None = None,
+    usage: dict[str, int | float | None] | None = None,
     model_name: str | None = None,
     service_tier: str | None = None,
     prompt: str | None = None,
@@ -381,7 +382,7 @@ def compute_estimated_cost_usd(
     model_name: str,
     service_tier: str | None,
     prompt: str | None,
-    usage: dict[str, int | None],
+    usage: dict[str, int | float | None],
     logger: logging.Logger,
     log_prefix: str,
 ) -> float | None:
@@ -399,6 +400,13 @@ def compute_estimated_cost_usd(
     if is_whisper_call(model_name, prompt):
         return None
 
+    # Providers such as OpenRouter report what the call actually cost. That
+    # beats LiteLLM's price table, which has no entry for many of their
+    # models (and none for aliases like "~deepseek/deepseek-flash-latest").
+    provider_cost = usage.get("provider_cost_usd")
+    if provider_cost is not None:
+        return round(float(provider_cost), 8)
+
     try:
         # `compute_model_call_cost` is typed against the ORM ModelCall but
         # only reads the same five fields we hand it here. Build a duck
@@ -410,9 +418,9 @@ def compute_estimated_cost_usd(
             model_name=model_name,
             service_tier=service_tier,
             prompt=prompt,
-            prompt_tokens=usage.get("prompt_tokens") or 0,
-            cached_prompt_tokens=usage.get("cached_prompt_tokens") or 0,
-            completion_tokens=usage.get("completion_tokens") or 0,
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            cached_prompt_tokens=int(usage.get("cached_prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
         )
         return round(compute_model_call_cost(proxy), 8)
     except Exception as exc:  # noqa: BLE001
@@ -449,8 +457,34 @@ def extract_litellm_finish_reason(response: Any) -> str | None:
     return str(finish_reason)
 
 
-def extract_litellm_usage(response: Any) -> dict[str, int | None]:
-    """Extracts token usage fields from a litellm response object."""
+# Where LiteLLM puts the cost a provider reported for a call (OpenRouter
+# returns it in the response body; LiteLLM always asks for it).
+_PROVIDER_COST_HEADER = "llm_provider-x-litellm-response-cost"
+
+
+def extract_provider_cost_usd(response: Any) -> float | None:
+    """USD cost the provider itself reported for this response, if any."""
+    hidden = getattr(response, "_hidden_params", None)
+    headers = hidden.get("additional_headers") if isinstance(hidden, dict) else None
+    value = headers.get(_PROVIDER_COST_HEADER) if isinstance(headers, dict) else None
+    if value is None:
+        usage = getattr(response, "usage", None)
+        if usage is None and isinstance(response, dict):
+            usage = response.get("usage")
+        value = getattr(usage, "cost", None)
+        if value is None and isinstance(usage, dict):
+            value = usage.get("cost")
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        cost = float(value)
+    except (TypeError, ValueError):
+        return None
+    return cost if math.isfinite(cost) and cost >= 0 else None
+
+
+def extract_litellm_usage(response: Any) -> dict[str, int | float | None]:
+    """Extracts token usage fields (and a provider-reported cost) from a litellm response."""
     usage = getattr(response, "usage", None)
     if usage is None and isinstance(response, dict):
         usage = response.get("usage")
@@ -488,9 +522,14 @@ def extract_litellm_usage(response: Any) -> dict[str, int | None]:
     if cached_prompt_tokens is None:
         cached_prompt_tokens = _usage_field("cache_read_input_tokens")
 
-    return {
+    result: dict[str, int | float | None] = {
         "prompt_tokens": _usage_field("prompt_tokens"),
         "cached_prompt_tokens": cached_prompt_tokens,
         "completion_tokens": _usage_field("completion_tokens"),
         "total_tokens": _usage_field("total_tokens"),
     }
+    # Only present when the provider reported a cost (OpenRouter does).
+    provider_cost = extract_provider_cost_usd(response)
+    if provider_cost is not None:
+        result["provider_cost_usd"] = provider_cost
+    return result

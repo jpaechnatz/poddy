@@ -97,7 +97,7 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
 
         model_call_id: int | None = None
         raw_response: str | None = None
-        usage: dict[str, int | None] | None = None
+        usage: dict[str, int | float | None] | None = None
         effective_service_tier: str | None = None
 
         # Record the intent to call the LLM when we have enough context to do so
@@ -300,7 +300,7 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         status: str,
         response: str | None,
         error_message: str | None,
-        usage: dict[str, int | None] | None = None,
+        usage: dict[str, int | float | None] | None = None,
         service_tier: str | None = None,
     ) -> None:
         try_update_model_call(
