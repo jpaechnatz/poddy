@@ -1,5 +1,11 @@
 .worktrees/*
 
+# Smoke test runs (docs/automated_smoke_testing.md)
+smoke.env
+smoke-instance/
+smoke-output/
+railway_scripts/
+
 __pycache__/
 *.py[cod]
 *$py.class

@@ -1,7 +1,7 @@
 """feed extras and audio edits
 
 Revision ID: 22ee5a64f8c1
-Revises: fc48f74f1645
+Revises: 9f14d34e725a
 Create Date: 2026-10-27 14:35:38.763396
 
 """
@@ -11,7 +11,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "22ee5a64f8c1"
-down_revision = "fc48f74f1645"
+down_revision = "9f14d34e725a"
 branch_labels = None
 depends_on = None
 
