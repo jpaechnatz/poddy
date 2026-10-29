@@ -451,6 +451,10 @@ def update_combined(payload: dict[str, Any]) -> dict[str, Any]:
     return read_combined()
 
 
+def _value_or_default(value: Any, default: Any) -> Any:
+    return default if value is None else value
+
+
 def to_pydantic_config() -> PydanticConfig:
     data = read_combined()
     # Map whisper section to discriminated union config
@@ -558,12 +562,15 @@ def to_pydantic_config() -> PydanticConfig:
                 DEFAULTS.APP_AUTOMATICALLY_WHITELIST_NEW_EPISODES,
             )
         ),
+        # 0 is a valid choice ("no archive episodes"), so only a missing value
+        # falls back to the default; "or DEFAULT" would turn 0 into 1.
         number_of_episodes_to_whitelist_from_archive_of_new_feed=int(
-            data["app"].get(
-                "number_of_episodes_to_whitelist_from_archive_of_new_feed",
+            _value_or_default(
+                data["app"].get(
+                    "number_of_episodes_to_whitelist_from_archive_of_new_feed"
+                ),
                 DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED,
             )
-            or DEFAULTS.APP_NUM_EPISODES_TO_WHITELIST_FROM_ARCHIVE_OF_NEW_FEED
         ),
         enable_public_landing_page=bool(
             data["app"].get(
