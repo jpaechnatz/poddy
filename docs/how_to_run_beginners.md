@@ -152,7 +152,7 @@ PODLY_SECRET_KEY=
 ### First Run
 
 1. Docker will download and build the necessary image (this may take 5-15 minutes)
-2. Look for "Serving on http://0.0.0.0:5001" in `docker compose -f compose.pi.yml logs -f`
+2. Wait until `curl -sI http://localhost:5001/` answers `200 OK` (follow progress with `docker compose -f compose.pi.yml logs -f`)
 3. Open your browser to `http://localhost:5001`
 4. Configure settings at `http://localhost:5001/config` (Settings)
    - Alternatively, set secrets via Docker env file `.env.local` in the project root and restart the container. See .env.local.example

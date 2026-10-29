@@ -101,7 +101,7 @@ Return only one JSON object (no markdown/code fences, no analysis text) with:
         )
 
         raw_response: str | None = None
-        usage: dict[str, int | None] | None = None
+        usage: dict[str, int | float | None] | None = None
         effective_service_tier: str | None = None
 
         try:
@@ -976,7 +976,7 @@ Return only one JSON object (no markdown/code fences, no analysis text) with:
         status: str,
         response: str | None,
         error_message: str | None,
-        usage: dict[str, int | None] | None = None,
+        usage: dict[str, int | float | None] | None = None,
         service_tier: str | None = None,
     ) -> None:
         try_update_model_call(

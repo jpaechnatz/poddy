@@ -48,7 +48,6 @@ WHISPER_REMOTE_MODEL=openai/whisper-large-v3-turbo
 WHISPER_LANGUAGE=de
 
 # ANMELDUNG
-
 REQUIRE_AUTH=true
 PODLY_ADMIN_USERNAME=admin
 PODLY_ADMIN_PASSWORD=ein-langes-passwort
@@ -97,7 +96,8 @@ docker compose -f compose.pi.yml logs -f      # Strg+C beendet nur die Anzeige
 ```
 
 Der Build dauert auf dem Pi beim ersten Mal einige Minuten. Fertig ist er,
-wenn im Log `Serving on http://0.0.0.0:5001` steht. Test auf dem Pi:
+wenn dieser Test auf dem Pi antwortet (bis dahin kommt „Connection refused“
+oder gar nichts; einfach nach einer Minute wiederholen):
 
 ```bash
 curl -sI http://127.0.0.1:5001/ | head -1      # erwartet: HTTP/1.1 200 OK
@@ -129,6 +129,10 @@ Nur im eigenen Tailnet (nicht öffentlich) reicht statt Funnel
    beim Hinzufügen gleich die neuesten Folgen aus dem Archiv bearbeitet (Standard: 1).
 3. „Auto-enable new episodes“ eingeschaltet lassen: Neu erscheinende Folgen
    werden dann automatisch bearbeitet.
+4. Optional für den Kosten-Tab: Auf derselben Seite unter „Cost estimates“
+   „Whisper rate ($ per hour)“ auf `0.01` setzen (Whisper Turbo bei
+   OpenRouter). KI-Kosten übernimmt Poddy direkt aus den OpenRouter-Antworten;
+   die Transkription schätzt es mit diesem Stundensatz.
 
 Wurden schon Folgen eines Feeds freigegeben, setzt **„Mark backlog as seen“**
 im Menü des Feeds (drei Punkte) den Stand zurück: Alle bisherigen Folgen gelten als gesehen,

@@ -10,6 +10,9 @@ import litellm
 from podcast_processor.llm_model_call_utils import (
     extract_litellm_content,
     extract_litellm_finish_reason,
+    extract_litellm_usage,
+    try_update_model_call,
+    try_upsert_model_call,
 )
 from shared.llm_utils import model_uses_max_completion_tokens
 
@@ -19,6 +22,11 @@ logger = logging.getLogger("global_logger")
 # parts first (map) and the part notes are then summarized (reduce).
 SUMMARY_CHUNK_CHARS = 40_000
 SUMMARY_MAX_OUTPUT_TOKENS = 900
+
+# ModelCall segment ranges for summary requests. Like the chapter fallback's
+# negative sentinels (-100, -200, ...), they keep these calls apart from the
+# segment-based ad calls: -300 is the final summary, -301, -302, ... the parts.
+SUMMARY_MODEL_CALL_SEQ = -300
 
 _LANGUAGE_NAMES = {
     "ar": "Arabic",
@@ -106,8 +114,20 @@ def _language_name(language: str | None) -> str:
     return "the main language of the transcript"
 
 
-def _complete(prompt: str, llm: dict[str, Any]) -> tuple[str, str | None]:
+def _complete(
+    prompt: str, llm: dict[str, Any], *, post_id: int | None, seq: int
+) -> tuple[str, str | None]:
     model = llm["llm_model"]
+    # Recorded so the cost dashboard includes summaries; best effort.
+    model_call_id = try_upsert_model_call(
+        post_id=post_id,
+        first_seq_num=seq,
+        last_seq_num=seq,
+        model_name=model,
+        prompt=prompt,
+        logger=logger,
+        log_prefix="Summary",
+    )
     args: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -122,10 +142,31 @@ def _complete(prompt: str, llm: dict[str, Any]) -> tuple[str, str | None]:
         args["max_completion_tokens"] = SUMMARY_MAX_OUTPUT_TOKENS
     else:
         args["max_tokens"] = SUMMARY_MAX_OUTPUT_TOKENS
-    response = litellm.completion(**args)
-    return extract_litellm_content(response).strip(), extract_litellm_finish_reason(
-        response
+    try:
+        response = litellm.completion(**args)
+    except Exception as e:
+        try_update_model_call(
+            model_call_id,
+            status="failed_permanent",
+            response=None,
+            error_message=str(e),
+            logger=logger,
+            log_prefix="Summary",
+        )
+        raise
+    content = extract_litellm_content(response).strip()
+    try_update_model_call(
+        model_call_id,
+        status="success",
+        response=content,
+        error_message=None,
+        logger=logger,
+        log_prefix="Summary",
+        usage=extract_litellm_usage(response),
+        model_name=model,
+        prompt=prompt,
     )
+    return content, extract_litellm_finish_reason(response)
 
 
 def summarize_transcript(
@@ -138,6 +179,7 @@ def summarize_transcript(
     timeout_sec: int,
     language: str | None,
     chunk_chars: int = SUMMARY_CHUNK_CHARS,
+    post_id: int | None = None,
 ) -> str | None:
     """Return an episode summary (overview + "- " bullet lines) or None.
 
@@ -166,6 +208,8 @@ def summarize_transcript(
                     f"List its main topics and key points as 3-8 short bullet "
                     f"points in {language_name}.\n\nTranscript part:\n{part}",
                     llm,
+                    post_id=post_id,
+                    seq=SUMMARY_MODEL_CALL_SEQ - index,
                 )
                 notes.append(note)
             source = "Notes on the parts of the episode, in order:\n\n" + "\n\n".join(
@@ -180,6 +224,8 @@ def summarize_transcript(
             "bullet points starting with '- ' naming the main topics. No "
             f"headings, no preamble.\n\n{source}",
             llm,
+            post_id=post_id,
+            seq=SUMMARY_MODEL_CALL_SEQ,
         )
         if finish_reason == "length":
             logger.warning("Summary hit the output limit and may be cut off")
