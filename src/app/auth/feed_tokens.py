@@ -128,7 +128,7 @@ def _resolve_user_id_from_feed_path(path: str) -> int | None:
 
 
 _POST_PATH_RE = re.compile(
-    r"^/post/(.+?)(?:/chapter-images/\d+|/transcript\.vtt|/chapters\.json"
+    r"^/post/(.+?)(?:/chapter-images/\d+|/transcript\.(?:vtt|srt)|/chapters\.json"
     r"|/original\.mp3|\.mp3)$"
 )
 

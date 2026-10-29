@@ -47,7 +47,7 @@ from app.routes.post_utils import (
     missing_processed_audio_response,
 )
 from app.runtime_config import config as runtime_config
-from app.transcript_vtt import render_post_transcript
+from app.transcript_vtt import TRANSCRIPT_FORMATS, render_post_transcript
 from app.writer.client import writer_client
 from podcast_processor.chapter_filter import parse_filter_strings
 from podcast_processor.transcription_manager import TranscriptionManager
@@ -1414,22 +1414,34 @@ def download_post_legacy(p_guid: str) -> ResponseReturnValue:
     return api_get_post_audio(p_guid)
 
 
-@post_bp.route("/post/<path:p_guid>/transcript.vtt", methods=["GET"])
-def get_post_transcript_vtt(p_guid: str) -> ResponseReturnValue:
-    """Serve the transcript matching the processed audio (podcast:transcript)."""
+def _post_transcript_response(p_guid: str, fmt: str) -> ResponseReturnValue:
     post = Post.query.filter_by(guid=p_guid).first()
     # Like the audio routes: nothing for episodes that are not whitelisted.
-    vtt = (
-        render_post_transcript(post) if post is not None and post.whitelisted else None
+    body = (
+        render_post_transcript(post, fmt)
+        if post is not None and post.whitelisted
+        else None
     )
-    if vtt is None:
+    if body is None:
         return flask.make_response(
             jsonify({"error": "Transcript not available", "error_code": "NOT_FOUND"}),
             404,
         )
-    response = flask.make_response(vtt)
-    response.headers["Content-Type"] = "text/vtt; charset=utf-8"
+    response = flask.make_response(body)
+    response.headers["Content-Type"] = f"{TRANSCRIPT_FORMATS[fmt]}; charset=utf-8"
     return response
+
+
+@post_bp.route("/post/<path:p_guid>/transcript.vtt", methods=["GET"])
+def get_post_transcript_vtt(p_guid: str) -> ResponseReturnValue:
+    """Serve the WebVTT transcript matching the processed audio (podcast:transcript)."""
+    return _post_transcript_response(p_guid, "vtt")
+
+
+@post_bp.route("/post/<path:p_guid>/transcript.srt", methods=["GET"])
+def get_post_transcript_srt(p_guid: str) -> ResponseReturnValue:
+    """Serve the SRT transcript matching the processed audio (podcast:transcript)."""
+    return _post_transcript_response(p_guid, "srt")
 
 
 def _processed_post_chapters(p_guid: str) -> list[Any] | None:

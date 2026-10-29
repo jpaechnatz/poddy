@@ -11,7 +11,7 @@ from app.feeds import generate_feed_xml
 from app.models import Feed, Post, ProcessingJob, TranscriptSegment
 from app.routes.post_routes import post_bp
 from app.runtime_config import config as runtime_config
-from app.transcript_vtt import build_vtt, map_time, parse_audio_edits
+from app.transcript_vtt import build_srt, build_vtt, map_time, parse_audio_edits
 from podcast_processor.podcast_processor import PodcastProcessor
 
 
@@ -46,6 +46,25 @@ def test_build_vtt_drops_ads_and_applies_both_passes() -> None:
     )
 
 
+def test_build_srt_matches_vtt_times_and_numbers_cues() -> None:
+    segments = [
+        _seg(0.0, 4.0, "Hallo und willkommen"),
+        _seg(10.0, 18.0, "Werbung für etwas"),
+        _seg(20.0, 24.0, "Zurück <b>&</b> weiter --> los"),
+    ]
+    passes = [[(10.0, 19.0)], [(6.5, 8.0)]]
+    srt = build_srt(segments, passes)
+
+    assert srt == (
+        "1\n00:00:00,000 --> 00:00:04,000\nHallo und willkommen\n\n"
+        "2\n00:00:09,500 --> 00:00:13,500\nZurück <b>&</b> weiter → los\n"
+    )
+    # Same cue times as the WebVTT version, only the separator differs.
+    vtt = build_vtt(segments, passes)
+    assert "00:00:09.500 --> 00:00:13.500" in vtt
+    assert build_srt([], passes) == ""
+
+
 def test_parse_audio_edits_rejects_unknown_or_broken_data() -> None:
     assert parse_audio_edits(None) is None
     assert parse_audio_edits("not json") is None
@@ -58,6 +77,7 @@ def test_parse_audio_edits_rejects_unknown_or_broken_data() -> None:
 
 def test_transcript_path_requires_feed_token_auth() -> None:
     assert _is_token_protected_endpoint("/post/ep-1/transcript.vtt")
+    assert _is_token_protected_endpoint("/post/ep-1/transcript.srt")
     assert not _is_token_protected_endpoint("/post/ep-1/transcript.txt")
 
 
@@ -118,6 +138,15 @@ def test_transcript_route_serves_vtt_for_processed_post(app: Any) -> None:
     assert legacy.status_code == 404  # no mapping stored: times would be wrong
     assert missing.status_code == 404
 
+    srt = client.get("/post/ready/transcript.srt")
+    assert srt.status_code == 200
+    assert srt.headers["Content-Type"] == "application/x-subrip; charset=utf-8"
+    assert srt.get_data(as_text=True) == (
+        "1\n00:00:00,000 --> 00:00:03,000\nHi\n\n"
+        "2\n00:00:05,000 --> 00:00:06,000\nBye\n"
+    )
+    assert client.get("/post/legacy/transcript.srt").status_code == 404
+
 
 def test_feed_lists_transcript_only_where_available(app: Any) -> None:
     with app.app_context():
@@ -142,10 +171,14 @@ def test_feed_lists_transcript_only_where_available(app: Any) -> None:
             runtime_config.autoprocess_on_download = original_flag
 
     assert 'xmlns:podcast="https://podcastindex.org/namespace/1.0"' in xml
-    assert xml.count("<podcast:transcript") == 1
+    # One tag per format, only for the post that has a transcript.
+    assert xml.count("<podcast:transcript") == 2
     assert 'url="http://podly.local/post/with/transcript.vtt"' in xml
+    assert 'url="http://podly.local/post/with/transcript.srt"' in xml
+    assert "/post/without/transcript" not in xml
     assert 'type="text/vtt"' in xml
-    assert 'language="de"' in xml
+    assert 'type="application/x-subrip"' in xml
+    assert xml.count('language="de"') == 2
 
 
 def test_finalize_stores_removed_windows_for_transcripts() -> None:
@@ -188,6 +221,7 @@ def test_token_feed_resolution_keeps_dots_in_guids(app: Any) -> None:
 
         for path in (
             "/post/ep.42/transcript.vtt",
+            "/post/ep.42/transcript.srt",
             "/post/ep.42.mp3",
             "/post/ep.42/original.mp3",
         ):
@@ -208,6 +242,7 @@ def test_token_auth_covers_guids_with_slashes(app: Any) -> None:
             ".mp3",
             "/original.mp3",
             "/transcript.vtt",
+            "/transcript.srt",
             "/chapters.json",
             "/chapter-images/0",
         ):
@@ -251,3 +286,5 @@ def test_transcript_route_handles_encoded_slash_guid_and_whitelist(
     client = app.test_client()
     assert client.get("/post/tag%3Ax%2Fposts%2F1/transcript.vtt").status_code == 200
     assert client.get("/post/hidden/transcript.vtt").status_code == 404
+    assert client.get("/post/tag%3Ax%2Fposts%2F1/transcript.srt").status_code == 200
+    assert client.get("/post/hidden/transcript.srt").status_code == 404
