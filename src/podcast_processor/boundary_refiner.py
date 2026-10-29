@@ -10,11 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import litellm
 from jinja2 import Template
 
 from app.writer.client import writer_client
+from podcast_processor.llm_model_call_utils import (
+    apply_service_tier,
+    call_litellm_with_tier_retry,
+    extract_litellm_usage,
+    record_service_tier_on_model_call,
+    try_update_model_call,
+)
 from shared.config import Config
+from shared.llm_utils import normalize_completion_args_for_model
 
 # Internal defaults for boundary expansion; not user-configurable.
 MAX_START_EXTENSION_SECONDS = 30.0
@@ -90,6 +97,8 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
 
         model_call_id: int | None = None
         raw_response: str | None = None
+        usage: dict[str, int | None] | None = None
+        effective_service_tier: str | None = None
 
         # Record the intent to call the LLM when we have enough context to do so
         if (
@@ -119,15 +128,31 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 )
 
         try:
-            response = litellm.completion(
-                model=self.config.llm_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=4096,
-                timeout=self.config.openai_timeout,
-                api_key=self.config.llm_api_key,
-                base_url=self.config.openai_base_url,
+            completion_args: dict[str, Any] = {
+                "model": self.config.llm_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 4096,
+                "timeout": self.config.openai_timeout,
+                "api_key": self.config.llm_api_key,
+                "base_url": self.config.openai_base_url,
+            }
+            normalize_completion_args_for_model(completion_args)
+            apply_service_tier(completion_args, self.config)
+            record_service_tier_on_model_call(
+                model_call_id,
+                completion_args,
+                logger=self.logger,
+                log_prefix="Boundary refine",
             )
+            response = call_litellm_with_tier_retry(
+                completion_args,
+                config=self.config,
+                logger=self.logger,
+                model_call_id=model_call_id,
+            )
+            effective_service_tier = completion_args.get("service_tier")
+            usage = extract_litellm_usage(response)
 
             choice = response.choices[0] if response.choices else None
             content = ""
@@ -173,6 +198,8 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 status="received_response",
                 response=raw_response,
                 error_message=None,
+                usage=usage,
+                service_tier=effective_service_tier,
             )
             # Parse JSON (strip markdown fences). Log parse diagnostics so failures are actionable.
             cleaned = re.sub(r"```json|```", "", content.strip())
@@ -209,6 +236,8 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                     status="success",
                     response=raw_response,
                     error_message=None,
+                    usage=usage,
+                    service_tier=effective_service_tier,
                 )
                 self.logger.info(
                     "LLM refinement applied",
@@ -247,6 +276,8 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 status="success_heuristic",
                 response=raw_response,
                 error_message=parse_error or "parse_failed",
+                usage=usage,
+                service_tier=effective_service_tier,
             )
         except Exception as e:  # noqa: BLE001
             self._update_model_call(
@@ -254,6 +285,8 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
                 status="failed_permanent",
                 response=raw_response,
                 error_message=str(e),
+                usage=usage,
+                service_tier=effective_service_tier,
             )
             self.logger.warning(f"LLM refinement failed: {e}, using heuristic")
 
@@ -267,28 +300,21 @@ Return JSON: {"refined_start": {{ad_start}}, "refined_end": {{ad_end}}, "start_r
         status: str,
         response: str | None,
         error_message: str | None,
+        usage: dict[str, int | None] | None = None,
+        service_tier: str | None = None,
     ) -> None:
-        """Best-effort ModelCall updater; no-op if call creation failed."""
-        if model_call_id is None:
-            return
-        try:
-            writer_client.update(
-                "ModelCall",
-                int(model_call_id),
-                {
-                    "status": status,
-                    "response": response,
-                    "error_message": error_message,
-                    "retry_attempts": 1,
-                },
-                wait=True,
-            )
-        except Exception as exc:  # best-effort; do not block refinement  # noqa: BLE001
-            self.logger.warning(
-                "Boundary refine: failed to update ModelCall %s: %s",
-                model_call_id,
-                exc,
-            )
+        try_update_model_call(
+            model_call_id,
+            status=status,
+            response=response,
+            error_message=error_message,
+            logger=self.logger,
+            log_prefix="Boundary refine",
+            usage=usage,
+            model_name=getattr(self.config, "llm_model", None),
+            service_tier=service_tier,
+            prompt="boundary_refine",
+        )
 
     def _get_context(
         self, ad_start: float, ad_end: float, all_segments: list[dict[str, Any]]

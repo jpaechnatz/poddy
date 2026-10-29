@@ -1,3 +1,13 @@
+# [2.10.0](https://github.com/podly-pure-podcasts/podly_pure_podcasts/compare/v2.9.0...v2.10.0) (2026-10-29)
+
+
+### Features
+
+* **costs:** cost dashboard priced from model calls ([9165b8e](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/9165b8e76c619fdf3d94404ffac4e7c679d90732))
+* **costs:** persist an estimated cost on each model call ([c51381c](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/c51381cb794c3a9ab4a724e1bca426d49e4bf89f))
+* **llm:** configurable service tier with Flex retry and standard fallback ([4e76120](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/4e7612026a6c4be69dc44eb85fb2ce96ca8160e7))
+* **model-calls:** record service tier and token usage per call ([3f9b752](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/3f9b752aade39ae5171cea73104e2eff69228c71))
+
 # [2.9.0](https://github.com/podly-pure-podcasts/podly_pure_podcasts/compare/v2.8.0...v2.9.0) (2026-10-27)
 
 
