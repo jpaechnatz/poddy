@@ -27,7 +27,7 @@ heißen weiterhin „podly“, damit bestehende Installationen kompatibel bleibe
 - **Folgen ausschließen:** Titel-Filter pro Feed, z. B. `Stammtisch`.
 - **Audio aufbereiten:** lange Pausen kürzen und Lautheit auf −16 LUFS
   normalisieren (pro Feed).
-- **Transkripte im Feed:** `podcast:transcript` (WebVTT) passend zur
+- **Transkripte im Feed:** `podcast:transcript` (WebVTT und SRT) passend zur
   geschnittenen Folge, auf Wunsch in jedem Modus; Sprache fest oder „Auto“ für
   Folgen mit fremdsprachigen Einspielern.
 - **KI-Zusammenfassung** in der Folgenbeschreibung (pro Feed).
