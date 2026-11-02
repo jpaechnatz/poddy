@@ -91,7 +91,7 @@ jobs:
           echo "$files_changed"
 
           # If no files are documentation, then we should continue
-          non_doc_files=$(echo "$files_changed" | grep -v -E '(\.md$|^docs/|LICENCE)')
+          non_doc_files=$(echo "$files_changed" | grep -v -E '(\.md$|^docs/|LICENCE)' || true)
 
           if [ "${{ github.event_name }}" = "release" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Release or manual build detected. Skipping documentation-only shortcut."
