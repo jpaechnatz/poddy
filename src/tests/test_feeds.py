@@ -449,6 +449,7 @@ def test_refresh_feed_backfills_existing_unprocessed_post_duration(
         description="Episode 1 description",
         image_url=mock_feed.image_url,
         duration=None,
+        download_url="https://example.com/episode1.mp3",
     )
     existing_post.processed_audio_path = None
     mock_feed.posts = [existing_post]
@@ -487,6 +488,7 @@ def test_refresh_feed_updates_existing_post_description(
         title="Episode 1",
         description="Plain source description",
         image_url=mock_feed.image_url,
+        download_url="https://example.com/episode1.mp3",
     )
     existing_post.processed_audio_path = "/tmp/processed.mp3"
     mock_feed.posts = [existing_post]

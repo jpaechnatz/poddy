@@ -39,6 +39,10 @@ def _apply_existing_post_updates(
                 continue
             setattr(post, field_name, post_update[field_name])
             updated = True
+        # The source link is not part of the served feed, so a new signature
+        # alone must not mark the feed as changed (that would bust the ETag).
+        if post_update.get("download_url"):
+            post.download_url = post_update["download_url"]
 
         if updated:
             updated_posts_count += 1

@@ -521,6 +521,12 @@ def refresh_feed(feed: Feed) -> None:
         if existing_post.image_url != updated_image_url:
             post_update["image_url"] = updated_image_url
 
+        # Signed enclosure links (Patreon, Supercast, Steady, ...) change over
+        # time; downloading or reprocessing with an old signature gets 403.
+        updated_download_url = find_audio_link(entry)
+        if updated_download_url and existing_post.download_url != updated_download_url:
+            post_update["download_url"] = updated_download_url
+
         parsed_duration = get_duration(entry)
         if (
             existing_post.processed_audio_path is None
