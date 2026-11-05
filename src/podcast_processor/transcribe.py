@@ -8,12 +8,25 @@ from typing import Any
 from groq import Groq
 from groq import Omit as GroqOmit
 from groq import omit as groq_omit
-from openai import Omit, OpenAI, omit
+from openai import BadRequestError, Omit, OpenAI, omit
 from openai.types.audio.transcription_segment import TranscriptionSegment
 from pydantic import BaseModel
 
 from podcast_processor.audio import split_audio
 from shared.config import GroqWhisperConfig, RemoteWhisperConfig
+
+# OpenRouter routes each transcription request to one of several providers.
+# Not every provider returns segment timestamps, and some reject them with
+# "Provider returned 400"; a retry usually lands on one that does. Other
+# endpoints are unaffected: a normal response returns on the first attempt.
+CHUNK_ATTEMPTS = 4
+CHUNK_RETRY_DELAYS_SEC = (2.0, 5.0, 10.0)
+
+
+def _is_provider_rejection(exc: BadRequestError) -> bool:
+    """A 400 from the provider behind a router, not from our own request."""
+    return "provider returned" in str(exc).lower()
+
 
 # Language value that lets the transcription model detect the language itself
 # (per request/chunk). Useful for episodes with clips in other languages.
@@ -216,6 +229,44 @@ class OpenAIWhisperTranscriber(Transcriber):
     def get_segments_for_chunk(
         self, chunk_path: str, language: str
     ) -> list[TranscriptionSegment]:
+        for attempt in range(1, CHUNK_ATTEMPTS + 1):
+            last_attempt = attempt == CHUNK_ATTEMPTS
+            try:
+                segments = self._request_segments(chunk_path, language)
+            except BadRequestError as e:
+                if last_attempt or not _is_provider_rejection(e):
+                    raise
+                self.logger.warning(
+                    "[WHISPER_API_CALL] Provider rejected chunk %s (attempt %d/%d): %s",
+                    chunk_path,
+                    attempt,
+                    CHUNK_ATTEMPTS,
+                    e,
+                )
+            else:
+                if segments is not None:
+                    self.logger.debug(f"Got {len(segments)} segments")
+                    return segments
+                if last_attempt:
+                    raise RuntimeError(
+                        f"Transcription of {chunk_path} returned no segment "
+                        f"timestamps after {CHUNK_ATTEMPTS} attempts; the "
+                        "provider does not support verbose_json segments"
+                    )
+                self.logger.warning(
+                    "[WHISPER_API_CALL] No segment timestamps for chunk %s "
+                    "(attempt %d/%d); retrying",
+                    chunk_path,
+                    attempt,
+                    CHUNK_ATTEMPTS,
+                )
+            delays = CHUNK_RETRY_DELAYS_SEC
+            time.sleep(delays[min(attempt, len(delays)) - 1])
+        raise AssertionError("unreachable")
+
+    def _request_segments(
+        self, chunk_path: str, language: str
+    ) -> list[TranscriptionSegment] | None:
         with open(chunk_path, "rb") as f:
             self.logger.info(
                 "[WHISPER_API_CALL] Sending chunk to API: %s (timeout=%ds)",
@@ -232,13 +283,7 @@ class OpenAIWhisperTranscriber(Transcriber):
             )
 
             self.logger.debug("Got transcription")
-
-            segments = transcription.segments
-            assert segments is not None
-
-            self.logger.debug(f"Got {len(segments)} segments")
-
-            return segments
+            return transcription.segments
 
 
 class GroqTranscriptionSegment(BaseModel):
