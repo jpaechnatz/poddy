@@ -140,20 +140,47 @@ def test_trim_file_aac_input_remuxed() -> None:
 
     Some podcast feeds deliver AAC audio inside an M4A container but with a .mp3
     filename.  Stream-copying (acodec=copy) fails because ffmpeg cannot mux AAC
-    into an MP3 container.  trim_file detects the codec and uses the correct
-    container extension, then renames back to the requested path.
+    into an MP3 container.  trim_file detects the codec, writes the matching
+    container (.m4a) and returns that path, so the name matches the content.
     """
-    with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as temp_file:
-        trim_file(
+    with tempfile.TemporaryDirectory() as temp_dir:
+        written = trim_file(
             Path(AAC_TEST_FILE_PATH),
-            Path(temp_file.name),
+            Path(temp_dir) / "0.mp3",
             start_ms=0,
             end_ms=10_000,  # trim first 10 seconds
         )
-        actual_duration = get_audio_duration_ms(temp_file.name)
+        assert written == Path(temp_dir) / "0.m4a"
+        assert written.exists()
+        assert not (Path(temp_dir) / "0.mp3").exists()
+        actual_duration = get_audio_duration_ms(str(written))
         assert actual_duration is not None, "Failed to get audio duration"
         assert 9_500 <= actual_duration <= 10_500, (
             f"Duration out of range: expected ~10000ms, got {actual_duration}ms"
+        )
+
+
+def test_split_audio_aac_chunks_keep_a_matching_extension() -> None:
+    """Chunks sent to the transcription API are named after their content.
+
+    OpenRouter rejected AAC chunks named "N.mp3" with "Provider returned 400".
+    """
+    import ffmpeg
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        chunks = split_audio(Path(AAC_TEST_FILE_PATH), Path(temp_dir), 200_000)
+
+        assert len(chunks) > 1
+        for chunk_path, _offset in chunks:
+            assert chunk_path.suffix == ".m4a", chunk_path
+            assert chunk_path.exists(), chunk_path
+            codec = ffmpeg.probe(str(chunk_path))["streams"][0]["codec_name"]
+            assert codec == "aac"
+        assert [offset for _path, offset in chunks] == sorted(
+            offset for _path, offset in chunks
+        )
+        assert sorted(p.name for p in Path(temp_dir).iterdir()) == sorted(
+            path.name for path, _offset in chunks
         )
 
 

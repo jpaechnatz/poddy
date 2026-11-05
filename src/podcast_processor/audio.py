@@ -306,7 +306,10 @@ def trim_file(in_path: Path, out_path: Path, start_ms: int, end_ms: int) -> Path
 
     If the input codec cannot be muxed into the output container implied by
     *out_path* extension (e.g. AAC -> .mp3), the file is written with the
-    correct extension and renamed.  Returns the actual output path.
+    container's extension instead (AAC -> .m4a) and that path is returned.
+    The extension must match the content: transcription APIs such as
+    OpenRouter pick the decoder from the file name and reject AAC audio
+    named ".mp3" with HTTP 400.
     """
     duration_ms = end_ms - start_ms
 
@@ -342,11 +345,6 @@ def trim_file(in_path: Path, out_path: Path, start_ms: int, end_ms: int) -> Path
         .overwrite_output()
         .run()
     )
-
-    # Rename to requested path if we used a different extension
-    if needs_rename and actual_out != out_path:
-        actual_out.rename(out_path)
-        return out_path
 
     return actual_out
 
@@ -396,8 +394,10 @@ def split_audio(
         logger.debug(
             "[FFMPEG_SPLIT] Creating chunk %d/%d: %s", i + 1, num_chunks, export_path
         )
-        trim_file(audio_file_path, export_path, start_offset_ms, end_offset_ms)
-        chunks.append((export_path, start_offset_ms))
+        written = trim_file(
+            audio_file_path, export_path, start_offset_ms, end_offset_ms
+        )
+        chunks.append((written, start_offset_ms))
 
     logger.info("[FFMPEG_SPLIT] Split complete: created %d chunks", len(chunks))
     return chunks
