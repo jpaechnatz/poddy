@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 import validators
@@ -17,6 +18,47 @@ from shared.processing_paths import get_in_root
 logger = logging.getLogger(__name__)
 
 DOWNLOAD_DIR = str(get_in_root())
+
+
+def _host_matches(host: str, patterns: list[str]) -> bool:
+    return any(host == p or host.endswith("." + p) for p in patterns)
+
+
+def _redact_proxy(proxy: str) -> str:
+    parts = urlsplit(proxy)
+    if parts.username or parts.password:
+        return f"{parts.scheme}://***@{parts.hostname}:{parts.port}"
+    return proxy
+
+
+def download_proxies(url: str) -> dict[str, str] | None:
+    """Proxy for an episode download, from DOWNLOAD_PROXY / DOWNLOAD_PROXY_HOSTS.
+
+    Some hosts (e.g. Patreon behind Cloudflare) refuse downloads from data
+    centre IPs. DOWNLOAD_PROXY (http:// or https://) routes episode downloads
+    through another connection, such as a proxy at home reached via Tailscale.
+    DOWNLOAD_PROXY_HOSTS limits it to these domains and their subdomains
+    (comma-separated); empty means every download. Feeds and API calls never
+    use it.
+    """
+    proxy = (os.environ.get("DOWNLOAD_PROXY") or "").strip()
+    if not proxy:
+        return None
+    scheme = urlsplit(proxy).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            "DOWNLOAD_PROXY must start with http:// or https:// "
+            f"(got {scheme or 'no scheme'}://)"
+        )
+    hosts = [
+        h.strip().lower().lstrip(".")
+        for h in (os.environ.get("DOWNLOAD_PROXY_HOSTS") or "").split(",")
+        if h.strip()
+    ]
+    host = (urlsplit(url).hostname or "").lower()
+    if hosts and not _host_matches(host, hosts):
+        return None
+    return {"http": proxy, "https": proxy}
 
 
 class PodcastDownloader:
@@ -70,8 +112,16 @@ class PodcastDownloader:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "Referer": referer,
         }
+        request_options: dict[str, Any] = {}
+        proxies = download_proxies(audio_link)
+        if proxies:
+            request_options["proxies"] = proxies
+            self.logger.info(
+                "Downloading through DOWNLOAD_PROXY %s",
+                _redact_proxy(proxies["https"]),
+            )
         with requests.get(
-            audio_link, stream=True, timeout=60, headers=headers
+            audio_link, stream=True, timeout=60, headers=headers, **request_options
         ) as response:
             if response.status_code == 200:
                 with open(download_path, "wb") as file:

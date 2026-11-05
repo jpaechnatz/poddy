@@ -173,6 +173,40 @@ Kontrolle: Den Link im Browser öffnen. Im XML muss
 `http://`, fehlt `PODLY_TRUSTED_PROXY` oder der Container wurde danach nicht
 neu gestartet.
 
+## Downloads über den Heimanschluss (z. B. Patreon)
+
+Läuft Poddy auf einem Server im Rechenzentrum (VPS), verweigern manche
+Anbieter die Audiodateien, z. B. Patreon mit „Download failed“ / 403. Dann
+lädt Poddy diese Folgen über einen kleinen Proxy auf dem Pi zu Hause.
+
+Auf dem **Pi** (muss im selben Tailnet sein):
+
+```bash
+sudo apt install tinyproxy
+echo "Allow 100.64.0.0/10" | sudo tee -a /etc/tinyproxy/tinyproxy.conf
+sudo systemctl restart tinyproxy
+tailscale ip -4            # z. B. 100.101.102.103
+```
+
+`Allow 100.64.0.0/10` lässt nur Geräte aus dem Tailnet zu. Port ist
+standardmäßig `8888`.
+
+Auf dem **Server** in `.env.local`:
+
+```ini
+DOWNLOAD_PROXY=http://100.101.102.103:8888
+DOWNLOAD_PROXY_HOSTS=patreon.com,patreonusercontent.com
+```
+
+Danach `docker compose -f compose.pi.yml up -d`. Test aus dem Container:
+
+```bash
+docker exec podly-pure-podcasts python3 -c "import requests; print(requests.get('https://api.ipify.org', proxies={'https': 'http://100.101.102.103:8888'}, timeout=15).text)"
+```
+
+Es muss die IP deines Heimanschlusses erscheinen. Alle anderen Podcasts laden
+weiter direkt.
+
 ## Ohne Tailscale
 
 Nur im Heimnetz: In Schritt 3 `PODLY_TRUSTED_PROXY` und die Datei `.env`
