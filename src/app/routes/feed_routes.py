@@ -777,19 +777,73 @@ def _enqueue_pending_jobs_async(app: Flask) -> None:
             logger.error("Failed to enqueue pending jobs asynchronously: %s", exc)
 
 
+# One manual "refresh all" at a time; a second click while one runs is
+# answered with 409 instead of starting a parallel refresh of every feed.
+_refresh_all_lock = Lock()
+
+
+def _refresh_all_feeds_background(app: Flask) -> None:
+    try:
+        with app.app_context():
+            result = get_jobs_manager().start_refresh_all_feeds(
+                trigger="manual_refresh"
+            )
+        logger.info(
+            "Manual refresh of all feeds finished: %s feeds refreshed, %s jobs enqueued",
+            result.get("feeds_refreshed"),
+            result.get("enqueued", 0),
+        )
+    except Exception:
+        logger.exception("Manual refresh of all feeds failed")
+    finally:
+        _refresh_all_lock.release()
+
+
 @feed_bp.route("/api/feeds/refresh-all", methods=["POST"])
-def refresh_all_feeds_endpoint() -> Response:
-    """Trigger a refresh for all feeds and enqueue pending jobs."""
+def refresh_all_feeds_endpoint() -> ResponseReturnValue:
+    """Start a refresh of all feeds in the background and enqueue pending jobs.
+
+    Refreshing every feed can take longer than a proxy such as Tailscale Funnel
+    keeps a request open; the browser then only saw a bare "Request failed".
+    So the work runs in a thread and the request returns at once.
+    """
     if hasattr(g, "current_user") and g.current_user:
         update_user_last_active(g.current_user.id)
 
-    result = get_jobs_manager().start_refresh_all_feeds(trigger="manual_refresh")
-    return jsonify(
-        {
-            "status": "success",
-            "feeds_refreshed": result["feeds_refreshed"],
-            "jobs_enqueued": result.get("enqueued", 0),
-        }
+    if not _refresh_all_lock.acquire(blocking=False):
+        return (
+            jsonify(
+                {
+                    "status": "running",
+                    "message": "A refresh of all feeds is already running",
+                }
+            ),
+            409,
+        )
+
+    feed_count = Feed.query.count()
+    app = cast(Any, current_app)._get_current_object()
+    try:
+        Thread(
+            target=_refresh_all_feeds_background,
+            args=(app,),
+            daemon=True,
+            name="feed-refresh-all",
+        ).start()
+    except Exception:
+        _refresh_all_lock.release()
+        raise
+
+    return (
+        jsonify(
+            {
+                "status": "accepted",
+                "feeds": feed_count,
+                "message": f"Refreshing {feed_count} feeds in the background; "
+                "new episodes appear in a minute or two",
+            }
+        ),
+        202,
     )
 
 
