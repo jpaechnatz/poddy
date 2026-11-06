@@ -113,8 +113,8 @@ export const feedsApi = {
 
   refreshAllFeeds: async (): Promise<{
     status: string;
-    feeds_refreshed: number;
-    jobs_enqueued: number;
+    feeds: number;
+    message: string;
   }> => {
     const response = await api.post('/api/feeds/refresh-all');
     return response.data;

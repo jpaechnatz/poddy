@@ -78,14 +78,17 @@ export default function HomePage() {
   const refreshAllMutation = useMutation({
     mutationFn: () => feedsApi.refreshAllFeeds(),
     onSuccess: (data) => {
-      toast.success(
-        `Refreshed ${data.feeds_refreshed} feeds and enqueued ${data.jobs_enqueued} jobs`
-      );
-      refetch();
+      toast.success(data.message);
+      // The refresh runs on the server in the background; pick up its result.
+      window.setTimeout(() => refetch(), 30_000);
     },
     onError: (err) => {
-      console.error('Failed to refresh all feeds', err);
       const { status, data, message } = getHttpErrorInfo(err);
+      if (status === 409) {
+        toast(message);
+        return;
+      }
+      console.error('Failed to refresh all feeds', err);
       emitDiagnosticError({
         title: 'Failed to refresh all feeds',
         message,
