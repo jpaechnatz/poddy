@@ -179,6 +179,8 @@ def test_feed_lists_transcript_only_where_available(app: Any) -> None:
     assert 'type="text/vtt"' in xml
     assert 'type="application/x-subrip"' in xml
     assert xml.count('language="de"') == 2
+    # SRT is listed first for apps that only read the first transcript tag.
+    assert xml.index("transcript.srt") < xml.index("transcript.vtt")
 
 
 def test_finalize_stores_removed_windows_for_transcripts() -> None:
