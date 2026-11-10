@@ -43,6 +43,9 @@ OPENROUTER_TRANSCRIBE_MODEL = "openai/whisper-large-v3-turbo"
 OPENROUTER_LLM_MODEL = "openrouter/~deepseek/deepseek-flash-latest"
 # OpenRouter caps uploads at 25 MB and upstream processing time at 60 s.
 OPENROUTER_CHUNKSIZE_MB = 10
+# A 10 MB chunk normally transcribes in about 10 s. With the generic 600 s a
+# provider that hangs held a job for 10+ minutes before the SDK retried.
+OPENROUTER_WHISPER_TIMEOUT_SEC = 180
 
 WHISPER_GROQ_MODEL = "whisper-large-v3-turbo"
 WHISPER_GROQ_LANGUAGE = "en"

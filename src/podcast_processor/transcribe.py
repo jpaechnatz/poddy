@@ -171,33 +171,38 @@ class OpenAIWhisperTranscriber(Transcriber):
         )
         audio_chunk_path = audio_file_path + "_parts"
 
-        chunks = split_audio(
-            Path(audio_file_path),
-            Path(audio_chunk_path),
-            self.config.chunksize_mb * 1024 * 1024,
-        )
-
-        self.logger.info("[WHISPER_REMOTE] Processing %d chunks", len(chunks))
-        all_segments: list[TranscriptionSegment] = []
-
-        for idx, chunk in enumerate(chunks):
-            chunk_path, offset = chunk
-            self.logger.info(
-                "[WHISPER_REMOTE] Processing chunk %d/%d: %s",
-                idx + 1,
-                len(chunks),
-                chunk_path,
+        # The chunk files are as large as the episode; remove them even when
+        # a chunk fails, or every failed attempt leaves a copy on disk.
+        try:
+            chunks = split_audio(
+                Path(audio_file_path),
+                Path(audio_chunk_path),
+                self.config.chunksize_mb * 1024 * 1024,
             )
-            segments = self.get_segments_for_chunk(str(chunk_path), language=language)
-            self.logger.info(
-                "[WHISPER_REMOTE] Chunk %d/%d complete: %d segments",
-                idx + 1,
-                len(chunks),
-                len(segments),
-            )
-            all_segments.extend(self.add_offset_to_segments(segments, offset))
+            self.logger.info("[WHISPER_REMOTE] Processing %d chunks", len(chunks))
+            all_segments: list[TranscriptionSegment] = []
 
-        shutil.rmtree(audio_chunk_path)
+            for idx, chunk in enumerate(chunks):
+                chunk_path, offset = chunk
+                self.logger.info(
+                    "[WHISPER_REMOTE] Processing chunk %d/%d: %s",
+                    idx + 1,
+                    len(chunks),
+                    chunk_path,
+                )
+                segments = self.get_segments_for_chunk(
+                    str(chunk_path), language=language
+                )
+                self.logger.info(
+                    "[WHISPER_REMOTE] Chunk %d/%d complete: %d segments",
+                    idx + 1,
+                    len(chunks),
+                    len(segments),
+                )
+                all_segments.extend(self.add_offset_to_segments(segments, offset))
+
+        finally:
+            shutil.rmtree(audio_chunk_path, ignore_errors=True)
         self.logger.info(
             "[WHISPER_REMOTE] Transcription complete: %d total segments",
             len(all_segments),
@@ -312,32 +317,37 @@ class GroqWhisperTranscriber(Transcriber):
         )
         audio_chunk_path = audio_file_path + "_parts"
 
-        # 12MB seems to cause instability in Groq
-        chunks = split_audio(
-            Path(audio_file_path), Path(audio_chunk_path), 6 * 1024 * 1024
-        )
-
-        self.logger.info("[WHISPER_GROQ] Processing %d chunks", len(chunks))
-        all_segments: list[GroqTranscriptionSegment] = []
-
-        for idx, chunk in enumerate(chunks):
-            chunk_path, offset = chunk
-            self.logger.info(
-                "[WHISPER_GROQ] Processing chunk %d/%d: %s",
-                idx + 1,
-                len(chunks),
-                chunk_path,
+        # The chunk files are as large as the episode; remove them even when
+        # a chunk fails, or every failed attempt leaves a copy on disk.
+        try:
+            # 12MB seems to cause instability in Groq
+            chunks = split_audio(
+                Path(audio_file_path), Path(audio_chunk_path), 6 * 1024 * 1024
             )
-            segments = self.get_segments_for_chunk(str(chunk_path), language=language)
-            self.logger.info(
-                "[WHISPER_GROQ] Chunk %d/%d complete: %d segments",
-                idx + 1,
-                len(chunks),
-                len(segments),
-            )
-            all_segments.extend(self.add_offset_to_segments(segments, offset))
+            self.logger.info("[WHISPER_GROQ] Processing %d chunks", len(chunks))
+            all_segments: list[GroqTranscriptionSegment] = []
 
-        shutil.rmtree(audio_chunk_path)
+            for idx, chunk in enumerate(chunks):
+                chunk_path, offset = chunk
+                self.logger.info(
+                    "[WHISPER_GROQ] Processing chunk %d/%d: %s",
+                    idx + 1,
+                    len(chunks),
+                    chunk_path,
+                )
+                segments = self.get_segments_for_chunk(
+                    str(chunk_path), language=language
+                )
+                self.logger.info(
+                    "[WHISPER_GROQ] Chunk %d/%d complete: %d segments",
+                    idx + 1,
+                    len(chunks),
+                    len(segments),
+                )
+                all_segments.extend(self.add_offset_to_segments(segments, offset))
+
+        finally:
+            shutil.rmtree(audio_chunk_path, ignore_errors=True)
         self.logger.info(
             "[WHISPER_GROQ] Transcription complete: %d total segments",
             len(all_segments),
