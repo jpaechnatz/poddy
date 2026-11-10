@@ -229,6 +229,13 @@ def summarize_transcript(
         )
         if finish_reason == "length":
             logger.warning("Summary hit the output limit and may be cut off")
+        if not summary:
+            # Reasoning models can spend the whole output budget on thinking
+            # and return no text; say so instead of silently skipping it.
+            logger.warning(
+                "Summary came back empty (finish_reason=%s); episode left without one",
+                finish_reason,
+            )
         return summary or None
     except Exception as e:  # noqa: BLE001
         logger.warning("Summary generation failed: %s", e)

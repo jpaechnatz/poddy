@@ -426,9 +426,10 @@ export default function FeedSettingsModal({
               <option value="podly">Poddy description preview</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              Uses the same composed description as the Poddy RSS feed (source
-              description + Poddy chapters). This affects only the UI preview
-              and does not change source RSS content.
+              Uses the same composed description as the Poddy RSS feed (Poddy
+              summary + source description + Poddy chapters). Feeds with AI
+              summaries show this view by default. This affects only the UI
+              preview and does not change source RSS content.
             </p>
           </div>
 

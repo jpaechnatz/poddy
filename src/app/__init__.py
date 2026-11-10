@@ -433,6 +433,19 @@ def _register_api_logging(app: Flask) -> None:
         except Exception:  # pragma: no cover  # noqa: BLE001
             return response
 
+        if path.startswith(("/feed/", "/post/")):
+            # What podcast apps fetch (feeds, audio, transcripts, chapters) and
+            # with which client, to tell "app never asked" from "server said
+            # no". request.path has no query string, so feed tokens stay out.
+            app_logger.info(
+                "[FEED] %s %s status=%s agent=%s",
+                request.method,
+                path,
+                getattr(response, "status_code", None),
+                (request.headers.get("User-Agent") or "-")[:80],
+            )
+            return response
+
         if not path.startswith("/api/"):
             return response
 
