@@ -531,7 +531,7 @@ def _feed_xml_response(xml_content: str | bytes) -> Response:
         response.headers["Content-Encoding"] = "gzip"
     else:
         response = make_response(body)
-    response.headers["Content-Type"] = "application/rss+xml"
+    response.headers["Content-Type"] = "application/rss+xml; charset=utf-8"
     response.vary.add("Accept-Encoding")
     return response
 

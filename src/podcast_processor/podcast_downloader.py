@@ -71,6 +71,8 @@ class PodcastDownloader:
     ):
         self.download_dir = download_dir
         self.logger = logger or logging.getLogger(__name__)
+        # Why the last download_episode() returned None, for the job status.
+        self.last_error: str | None = None
 
     def download_episode(self, post: Post, dest_path: str) -> str | None:
         """
@@ -82,6 +84,7 @@ class PodcastDownloader:
         Returns:
             Path to the downloaded file, or None if download failed
         """
+        self.last_error = None
         # Destination is required; ensure parent directory exists
         download_path = dest_path
         Path(download_path).parent.mkdir(parents=True, exist_ok=True)
@@ -106,7 +109,13 @@ class PodcastDownloader:
             abort(404)
             return None
 
-        self.logger.info(f"Downloading {audio_link} into {download_path}...")
+        # Private feeds (Patreon, Supercast, ...) put tokens in the URL's path
+        # and query, so only the host goes into the log.
+        self.logger.info(
+            "Downloading from %s into %s...",
+            urlsplit(audio_link).hostname,
+            download_path,
+        )
         referer = "https://open.acast.com/" if "acast.com" in audio_link else None
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -120,19 +129,44 @@ class PodcastDownloader:
                 "Downloading through DOWNLOAD_PROXY %s",
                 _redact_proxy(proxies["https"]),
             )
-        with requests.get(
-            audio_link, stream=True, timeout=60, headers=headers, **request_options
-        ) as response:
-            if response.status_code == 200:
-                with open(download_path, "wb") as file:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        file.write(chunk)
-                self.logger.info("Download complete.")
-            else:
-                self.logger.info(
-                    f"Failed to download the podcast episode, response: {response.status_code}"
-                )
-                return None
+        try:
+            with requests.get(
+                audio_link, stream=True, timeout=60, headers=headers, **request_options
+            ) as response:
+                if response.status_code == 200:
+                    # Write to a side file and move it into place only when
+                    # complete: a download cut off midway must not be mistaken
+                    # for the finished episode ("already downloaded") next time.
+                    partial_path = download_path + ".part"
+                    try:
+                        with open(partial_path, "wb") as file:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                file.write(chunk)
+                        os.replace(partial_path, download_path)
+                    finally:
+                        if os.path.exists(partial_path):
+                            os.remove(partial_path)
+                    self.logger.info("Download complete.")
+                else:
+                    self.last_error = f"HTTP {response.status_code}"
+                    self.logger.info(
+                        f"Failed to download the podcast episode, response: {response.status_code}"
+                    )
+                    return None
+        except requests.exceptions.ProxyError:
+            # The exception text holds the full episode URL; keep it out of the
+            # job status and the log.
+            self.last_error = (
+                f"DOWNLOAD_PROXY {_redact_proxy(proxies['https'])} not reachable"
+                if proxies
+                else "proxy not reachable"
+            )
+            self.logger.warning("Download failed: %s", self.last_error)
+            return None
+        except requests.RequestException as exc:
+            self.last_error = f"network error ({type(exc).__name__})"
+            self.logger.warning("Download failed: %s", self.last_error)
+            return None
 
         return download_path
 

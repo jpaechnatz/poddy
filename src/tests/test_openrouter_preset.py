@@ -20,6 +20,7 @@ PRESET_VARS = (
     "WHISPER_REMOTE_BASE_URL",
     "WHISPER_REMOTE_MODEL",
     "WHISPER_REMOTE_CHUNKSIZE_MB",
+    "WHISPER_REMOTE_TIMEOUT_SEC",
     "LLM_API_KEY",
     "LLM_MODEL",
 )
@@ -53,6 +54,7 @@ def test_preset_fills_all_settings_from_one_key(monkeypatch: Any) -> None:
     assert os.environ["WHISPER_REMOTE_BASE_URL"] == "https://openrouter.ai/api/v1"
     assert os.environ["WHISPER_REMOTE_MODEL"] == DEFAULTS.OPENROUTER_TRANSCRIBE_MODEL
     assert os.environ["WHISPER_REMOTE_CHUNKSIZE_MB"] == "10"
+    assert os.environ["WHISPER_REMOTE_TIMEOUT_SEC"] == "180"
     assert os.environ["LLM_API_KEY"] == "sk-or-123"
     assert os.environ["LLM_MODEL"].startswith("openrouter/")
 
@@ -62,9 +64,11 @@ def test_explicit_settings_win_over_the_preset(monkeypatch: Any) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-123")
     monkeypatch.setenv("WHISPER_REMOTE_MODEL", "mistralai/voxtral-small-transcribe-3-0")
     monkeypatch.setenv("LLM_MODEL", "openrouter/anthropic/claude-haiku-5.5")
+    monkeypatch.setenv("WHISPER_REMOTE_TIMEOUT_SEC", "600")
 
     apply_openrouter_env_preset()
 
+    assert os.environ["WHISPER_REMOTE_TIMEOUT_SEC"] == "600"
     assert (
         os.environ["WHISPER_REMOTE_MODEL"] == "mistralai/voxtral-small-transcribe-3-0"
     )

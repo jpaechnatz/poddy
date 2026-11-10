@@ -637,6 +637,9 @@ def apply_openrouter_env_preset() -> None:
                 "WHISPER_REMOTE_BASE_URL": DEFAULTS.OPENROUTER_BASE_URL,
                 "WHISPER_REMOTE_MODEL": DEFAULTS.OPENROUTER_TRANSCRIBE_MODEL,
                 "WHISPER_REMOTE_CHUNKSIZE_MB": str(DEFAULTS.OPENROUTER_CHUNKSIZE_MB),
+                "WHISPER_REMOTE_TIMEOUT_SEC": str(
+                    DEFAULTS.OPENROUTER_WHISPER_TIMEOUT_SEC
+                ),
             }
         )
     # LLM: only when no model is set or the model is an OpenRouter one, so a

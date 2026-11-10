@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Iterable
 from email.utils import format_datetime, parsedate_to_datetime
 from typing import Any, cast
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunparse
 
 import feedparser
 import PyRSS2Gen
@@ -379,8 +379,30 @@ def _get_base_url() -> str:
     return "http://localhost:5001"
 
 
+def _url_for_log(url: str) -> str:
+    """Feed URL without query string: private feeds carry tokens there."""
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}" if parts.netloc else url
+
+
+def _raise_for_failed_fetch(feed_data: feedparser.FeedParserDict) -> None:
+    """feedparser never raises; turn an HTTP error or unreadable feed into one.
+
+    Without this a refresh of a feed answering 403/404 did nothing and logged
+    nothing, so "refresh queued" was all anyone ever saw.
+    """
+    status = feed_data.get("status")
+    if isinstance(status, int) and status >= 400:
+        raise RuntimeError(f"Feed returned HTTP {status}")
+    if not feed_data.entries and feed_data.get("bozo") in (1, True):
+        exc = feed_data.get("bozo_exception")
+        raise RuntimeError(
+            f"Feed could not be read ({type(exc).__name__ if exc else 'invalid'})"
+        )
+
+
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
-    logger.info(f"Fetching feed from URL: {url}")
+    logger.info("Fetching feed from URL: %s", _url_for_log(url))
     feed_data = feedparser.parse(url)
     for entry in feed_data.entries:
         entry.id = get_guid(entry)
@@ -438,6 +460,7 @@ def _find_existing_post_for_entry(
 def refresh_feed(feed: Feed) -> None:
     logger.info(f"Refreshing feed with ID: {feed.id}")
     feed_data = fetch_feed(feed.rss_url)
+    _raise_for_failed_fetch(feed_data)
 
     updates = {}
     image_info = feed_data.feed.get("image")

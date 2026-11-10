@@ -1358,7 +1358,12 @@ class PodcastProcessor:
             post, dest_path=str(expected_unprocessed_path)
         )
         if download_path is None:
-            raise ProcessorException("Download failed")
+            reason = getattr(self.downloader, "last_error", None)
+            raise ProcessorException(
+                f"Download failed: {reason}"
+                if isinstance(reason, str)
+                else "Download failed"
+            )
         result = writer_client.update(
             "Post", post.id, {"unprocessed_audio_path": download_path}, wait=True
         )
