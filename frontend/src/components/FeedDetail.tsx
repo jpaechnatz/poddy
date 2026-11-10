@@ -49,14 +49,28 @@ function getEpisodeDescriptionViewStorageKey(feedId: number): string {
   return `${EPISODE_DESCRIPTION_VIEW_STORAGE_KEY_PREFIX}${feedId}`;
 }
 
-function loadEpisodeDescriptionView(feedId: number): EpisodeDescriptionView {
+function loadEpisodeDescriptionView(
+  feedId: number,
+  generatesSummary = false
+): EpisodeDescriptionView {
+  // Without a saved choice, feeds with AI summaries open on the Poddy view so
+  // the summary is visible; others keep the source description.
+  const fallback: EpisodeDescriptionView = generatesSummary ? 'podly' : 'source';
   if (typeof window === 'undefined') {
-    return 'source';
+    return fallback;
   }
-  const rawValue = window.localStorage.getItem(
-    getEpisodeDescriptionViewStorageKey(feedId)
-  );
-  return rawValue === 'podly' ? 'podly' : 'source';
+  let rawValue: string | null = null;
+  try {
+    rawValue = window.localStorage.getItem(
+      getEpisodeDescriptionViewStorageKey(feedId)
+    );
+  } catch {
+    return fallback;
+  }
+  if (rawValue === 'podly' || rawValue === 'source') {
+    return rawValue;
+  }
+  return fallback;
 }
 
 function persistEpisodeDescriptionView(
@@ -106,7 +120,9 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted, slidesIn = fa
   // load, so a fast switch goes straight to the new feed's entrance.
   const showFeedSkeleton = useDelayedFlag(isFeedTransitionActive, 250);
   const [episodeDescriptionView, setEpisodeDescriptionView] =
-    useState<EpisodeDescriptionView>(() => loadEpisodeDescriptionView(feed.id));
+    useState<EpisodeDescriptionView>(() =>
+      loadEpisodeDescriptionView(feed.id, feed.generate_summary === true)
+    );
   const handleEpisodeDescriptionViewChange = (view: EpisodeDescriptionView) => {
     setEpisodeDescriptionView(view);
     persistEpisodeDescriptionView(currentFeed.id, view);
@@ -355,8 +371,10 @@ export default function FeedDetail({ feed, onClose, onFeedDeleted, slidesIn = fa
   }, [isFeedTransitionActive, isLoading, feed.id, currentFeed.id]);
 
   useEffect(() => {
-    setEpisodeDescriptionView(loadEpisodeDescriptionView(currentFeed.id));
-  }, [currentFeed.id]);
+    setEpisodeDescriptionView(
+      loadEpisodeDescriptionView(currentFeed.id, currentFeed.generate_summary === true)
+    );
+  }, [currentFeed.id, currentFeed.generate_summary]);
 
   useEffect(() => {
     setExpandedDescriptions(new Set());
