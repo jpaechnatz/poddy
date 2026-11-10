@@ -677,7 +677,7 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
     ) -> None:
         self.image_url = image_url
         self.duration_seconds = duration_seconds
-        # Format ("vtt", "srt") -> URL, published in TRANSCRIPT_FORMATS order.
+        # Format ("srt", "vtt") -> URL, published in TRANSCRIPT_FORMATS order.
         self.transcript_urls = transcript_urls or {}
         self.transcript_language = transcript_language
         self.chapters_url = chapters_url

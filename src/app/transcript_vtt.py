@@ -71,10 +71,12 @@ def _inside(t: float, windows: Sequence[Window]) -> bool:
 Cue = tuple[float, float, str]
 
 # Transcript formats served next to the processed audio: path suffix ->
-# (MIME type for podcast:transcript and the HTTP response).
+# (MIME type for podcast:transcript and the HTTP response). The feed lists
+# them in this order; SRT comes first because some apps (e.g. iCatcher) may
+# only look at the first podcast:transcript tag.
 TRANSCRIPT_FORMATS: dict[str, str] = {
-    "vtt": "text/vtt",
     "srt": "application/x-subrip",
+    "vtt": "text/vtt",
 }
 
 
