@@ -127,10 +127,41 @@ def _resolve_user_id_from_feed_path(path: str) -> int | None:
     return None
 
 
-_POST_PATH_RE = re.compile(
-    r"^/post/(.+?)(?:/chapter-images/\d+|/transcript\.(?:vtt|srt)|/chapters\.json"
-    r"|/original\.mp3|\.mp3)$"
+_API_POST_SUFFIXES = ("/download/original", "/download", "/audio")
+# Poddy serves transcripts, chapters and chapter images next to the audio.
+_LEGACY_POST_SUFFIXES = (
+    "/transcript.vtt",
+    "/transcript.srt",
+    "/chapters.json",
+    "/original.mp3",
+    ".mp3",
 )
+_CHAPTER_IMAGE_SUFFIX_RE = re.compile(r"/chapter-images/\d+$")
+
+
+def _resolve_post_guid(path: str) -> str | None:
+    """Extract the full post GUID from a token-protected episode path.
+
+    GUIDs are stored verbatim from upstream feeds and may contain ``/`` and
+    ``.``; the episode routes use the ``path`` converter, so take everything
+    between the route prefix and its known suffix rather than one segment.
+    """
+    for prefix, suffixes in (
+        ("/api/posts/", _API_POST_SUFFIXES),
+        ("/post/", _LEGACY_POST_SUFFIXES),
+    ):
+        if not path.startswith(prefix):
+            continue
+        remainder = path[len(prefix) :]
+        if prefix == "/post/":
+            image = _CHAPTER_IMAGE_SUFFIX_RE.search(remainder)
+            if image and image.start() > 0:
+                return remainder[: image.start()]
+        for suffix in suffixes:
+            if remainder.endswith(suffix) and len(remainder) > len(suffix):
+                return remainder[: -len(suffix)]
+        return None
+    return None
 
 
 def _resolve_feed_id(path: str) -> int | None:
@@ -141,20 +172,9 @@ def _resolve_feed_id(path: str) -> int | None:
         except ValueError:
             return None
 
-    if path.startswith("/api/posts/"):
-        match = re.match(r"^/api/posts/(.+)/(?:audio|download(?:/original)?)$", path)
-        if match is None:
-            return None
-        post = Post.query.filter_by(guid=match.group(1)).first()
-        return post.feed_id if post else None
-
-    if path.startswith("/post/"):
-        # Strip exactly one known route suffix; GUIDs may contain dots, slashes
-        # and even end in ".mp3" themselves (URL-style GUIDs).
-        match = _POST_PATH_RE.match(path)
-        if match is None:
-            return None
-        post = Post.query.filter_by(guid=match.group(1)).first()
+    guid = _resolve_post_guid(path)
+    if guid is not None:
+        post = Post.query.filter_by(guid=guid).first()
         return post.feed_id if post else None
 
     return None
