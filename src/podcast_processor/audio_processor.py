@@ -20,6 +20,12 @@ class AudioCutResult(NamedTuple):
 # the refined timestamp to replace it.
 REFINED_EDGE_TOLERANCE_SECONDS = 1.0
 
+# A cut may start this much earlier when nothing was transcribed right before
+# the ad: a short spoken "Werbung" over a jingle is often dropped by the
+# transcription, so no rule could otherwise see it. Never reaches back into
+# transcribed speech.
+PRE_AD_GAP_EXTENSION_SECONDS = 4.0
+
 
 class AudioProcessor:
     """Handles audio processing and ad segment removal from podcast files."""
@@ -122,6 +128,8 @@ class AudioProcessor:
         if getattr(self.config, "enable_boundary_refinement", False):
             self._apply_refined_boundaries(post, ad_groups)
 
+        self._extend_into_preceding_gap(post, ad_groups)
+
         self.logger.info(
             f"Merged {len(ad_segments_with_text)} segments into {len(ad_groups)} groups for post {post.id}"
         )
@@ -157,6 +165,31 @@ class AudioProcessor:
             if new_end > new_start:
                 group.start_time = new_start
                 group.end_time = new_end
+
+    def _extend_into_preceding_gap(self, post: Post, ad_groups: Any) -> None:
+        """Start each cut earlier into untranscribed audio right before it."""
+        for group in ad_groups:
+            start = float(group.start_time)
+            previous_end = (
+                self.db_session.query(db.func.max(TranscriptSegment.end_time))
+                .filter(
+                    TranscriptSegment.post_id == post.id,
+                    TranscriptSegment.start_time < start - 0.05,
+                )
+                .scalar()
+            )
+            new_start = max(
+                start - PRE_AD_GAP_EXTENSION_SECONDS, float(previous_end or 0.0)
+            )
+            if new_start < start:
+                self.logger.info(
+                    "Ad cut for post %s starts at %.1fs instead of %.1fs "
+                    "(untranscribed audio before the ad)",
+                    post.id,
+                    new_start,
+                    start,
+                )
+                group.start_time = new_start
 
     def _safe_get_post_row(self, post: Post) -> Post | None:
         try:

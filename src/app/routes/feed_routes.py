@@ -436,7 +436,7 @@ def _aware_utc(value: datetime.datetime | None) -> datetime.datetime | None:
 # Bump when the rendered feed XML changes shape for unchanged data (e.g. a new
 # tag such as the SRT podcast:transcript), so cached clients refetch instead
 # of keeping a 304'd copy until the next episode.
-FEED_RENDER_VERSION = "3"
+FEED_RENDER_VERSION = "4"
 
 
 def _compute_feed_etag(feed: Feed) -> str:
