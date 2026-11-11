@@ -1729,6 +1729,18 @@ class AdClassifier:
             if getattr(i, "id", None) is not None
         ]
 
+        # Segments already in the block keep their own confidence. Replacing it
+        # with the block average would lift weak neighbor guesses (0.75) over
+        # the cut threshold next to a strong spot, cutting real content.
+        own_confidence: dict[int, float] = {}
+        for ident in block.get("identifications", []):
+            seg_id = getattr(ident, "transcript_segment_id", None)
+            if seg_id is None or ident.confidence is None:
+                continue
+            own_confidence[seg_id] = max(
+                own_confidence.get(seg_id, 0.0), float(ident.confidence)
+            )
+
         new_identifications: list[dict[str, Any]] = []
         for seg in transcript_segments:
             seg_start = float(seg.start_time or 0.0)
@@ -1743,7 +1755,7 @@ class AdClassifier:
                         "transcript_segment_id": seg.id,
                         "model_call_id": model_call.id,
                         "label": "ad",
-                        "confidence": block["confidence"],
+                        "confidence": own_confidence.get(seg.id, block["confidence"]),
                     }
                 )
 
