@@ -207,6 +207,12 @@ def _write_cdata(handler: Any, value: str) -> None:
     escaped_value = value.replace("]]>", "]]]]><![CDATA[>")
     writer = getattr(handler, "_write", None)
     if callable(writer):
+        # With short_empty_elements the generator holds back the ">" of the
+        # open tag until it sees content; raw writes bypass that, so close
+        # the start tag first or the output is <description<![CDATA[...]]>/>.
+        finish_start = getattr(handler, "_finish_pending_start_element", None)
+        if callable(finish_start):
+            finish_start()
         writer(f"<![CDATA[{escaped_value}]]>")
         return
 

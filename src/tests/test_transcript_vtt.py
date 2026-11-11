@@ -1,6 +1,7 @@
 """Transcripts delivered with the feed match the processed audio."""
 
 import json
+import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from typing import Any
 from unittest import mock
@@ -90,6 +91,7 @@ def _processed_post(feed: Feed, guid: str, edits: str | None) -> Post:
         processed_audio_path=f"/tmp/{guid}.mp3",
         whitelisted=True,
         audio_edits=edits,
+        description="<p>Shownotes &amp; mehr</p>",
     )
     db.session.add(post)
     db.session.commit()
@@ -180,6 +182,12 @@ def test_feed_lists_transcript_only_where_available(app: Any) -> None:
     assert 'type="application/x-subrip"' in xml
     assert xml.count('language="de"') == 1
     assert "</podcast:transcript>" not in xml
+    # The whole feed must stay valid XML: rich descriptions are written as
+    # raw CDATA, which must not end up inside a self-closed tag.
+    channel = ET.fromstring(xml.encode("utf-8")).find("channel")
+    assert channel is not None
+    descriptions = [item.findtext("description") for item in channel.iter("item")]
+    assert descriptions == ["<p>Shownotes &amp; mehr</p>"] * 2
     tag = xml[xml.index("<podcast:transcript") :]
     assert tag[: tag.index(">") + 1].endswith("/>")
 
