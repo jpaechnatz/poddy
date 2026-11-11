@@ -278,6 +278,51 @@ def test_call_model_retries_truncated_response(test_config: Config, app: Flask) 
         assert refreshed.response == VALID_RESPONSE
 
 
+def test_truncated_response_retries_with_larger_output_limit(
+    test_config: Config, app: Flask
+) -> None:
+    """Each cut-off attempt doubles the output limit instead of repeating it."""
+    test_config.openai_max_tokens = 4096
+    with app.app_context():
+        classifier = AdClassifier(config=test_config, db_session=db.session)
+        model_call = _persisted_model_call(test_config)
+        truncated = _completion('{"ad_segments": []}', "length")
+
+        with (
+            patch("time.sleep"),
+            patch(
+                "podcast_processor.ad_classifier.normalize_completion_args_for_model"
+            ),
+            patch(
+                "litellm.completion",
+                side_effect=[truncated, truncated, _completion(VALID_RESPONSE)],
+            ) as mocked_completion,
+        ):
+            response = classifier._call_model(
+                model_call_obj=model_call,
+                system_prompt="test system prompt",
+                max_retries=3,
+            )
+
+        assert response == VALID_RESPONSE
+        limits = [
+            c.kwargs.get("max_tokens") or c.kwargs.get("max_completion_tokens")
+            for c in mocked_completion.call_args_list
+        ]
+        assert limits == [4096, 8192, 16384]
+
+
+def test_output_limit_escalation_stops_at_ceiling(
+    test_config: Config, app: Flask
+) -> None:
+    with app.app_context():
+        classifier = AdClassifier(config=test_config, db_session=db.session)
+        assert classifier._next_output_token_limit(20000, 1) == 32768
+        assert classifier._next_output_token_limit(32768, 1) == 32768
+        test_config.openai_max_tokens = 50000
+        assert classifier._next_output_token_limit(None, 1) == 50000
+
+
 @pytest.mark.parametrize(
     "content",
     ["no json here", '{"ad_segments": "invalid"}'],
