@@ -171,16 +171,17 @@ def test_feed_lists_transcript_only_where_available(app: Any) -> None:
             runtime_config.autoprocess_on_download = original_flag
 
     assert 'xmlns:podcast="https://podcastindex.org/namespace/1.0"' in xml
-    # One tag per format, only for the post that has a transcript.
-    assert xml.count("<podcast:transcript") == 2
-    assert 'url="http://podly.local/post/with/transcript.vtt"' in xml
+    # One SRT tag (iCatcher reads only one), only for the post that has a
+    # transcript, written self-closing.
+    assert xml.count("<podcast:transcript") == 1
     assert 'url="http://podly.local/post/with/transcript.srt"' in xml
+    assert "transcript.vtt" not in xml
     assert "/post/without/transcript" not in xml
-    assert 'type="text/vtt"' in xml
     assert 'type="application/x-subrip"' in xml
-    assert xml.count('language="de"') == 2
-    # SRT is listed first for apps that only read the first transcript tag.
-    assert xml.index("transcript.srt") < xml.index("transcript.vtt")
+    assert xml.count('language="de"') == 1
+    assert "</podcast:transcript>" not in xml
+    tag = xml[xml.index("<podcast:transcript") :]
+    assert tag[: tag.index(">") + 1].endswith("/>")
 
 
 def test_finalize_stores_removed_windows_for_transcripts() -> None:

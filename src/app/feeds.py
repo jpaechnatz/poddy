@@ -7,8 +7,10 @@ import re
 import uuid
 from collections.abc import Iterable
 from email.utils import format_datetime, parsedate_to_datetime
+from io import StringIO
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunparse
+from xml.sax.saxutils import XMLGenerator
 
 import feedparser
 import PyRSS2Gen
@@ -659,6 +661,28 @@ def add_feed(feed_data: feedparser.FeedParserDict, language: str | None = None) 
         raise e
 
 
+# Transcript formats listed in the feed. The spec allows several
+# podcast:transcript tags, but iCatcher (15.2) reads only one per episode, so
+# the feed lists SRT alone; /transcript.vtt stays available.
+FEED_TRANSCRIPT_FORMATS: tuple[str, ...] = ("srt",)
+
+
+def _feed_to_xml(rss_feed: Any) -> str:
+    """Serialize a feed, writing empty elements as <tag ... />.
+
+    PyRSS2Gen writes <tag></tag>; some podcast apps only parse the
+    self-closing form of podcast:transcript.
+    """
+    if not isinstance(rss_feed, PyRSS2Gen.WriteXmlMixin):
+        return rss_feed.to_xml("utf-8")
+    out = StringIO()
+    handler = XMLGenerator(out, "utf-8", short_empty_elements=True)
+    handler.startDocument()
+    rss_feed.publish(handler)
+    handler.endDocument()
+    return out.getvalue()
+
+
 class ItunesRSSItem(PyRSS2Gen.RSSItem):
     def __init__(
         self,
@@ -677,7 +701,7 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
     ) -> None:
         self.image_url = image_url
         self.duration_seconds = duration_seconds
-        # Format ("srt", "vtt") -> URL, published in TRANSCRIPT_FORMATS order.
+        # Format -> URL, published in FEED_TRANSCRIPT_FORMATS order.
         self.transcript_urls = transcript_urls or {}
         self.transcript_language = transcript_language
         self.chapters_url = chapters_url
@@ -698,7 +722,8 @@ class ItunesRSSItem(PyRSS2Gen.RSSItem):
             handler.startElement("itunes:duration", {})
             handler.characters(_format_itunes_duration(self.duration_seconds))
             handler.endElement("itunes:duration")
-        for fmt, mime_type in TRANSCRIPT_FORMATS.items():
+        for fmt in FEED_TRANSCRIPT_FORMATS:
+            mime_type = TRANSCRIPT_FORMATS[fmt]
             url = self.transcript_urls.get(fmt)
             if not url:
                 continue
@@ -821,7 +846,7 @@ def feed_item(
             fmt: _append_feed_token_params(
                 f"{base_url}{post_transcript_path(post.guid, fmt)}"
             )
-            for fmt in TRANSCRIPT_FORMATS
+            for fmt in FEED_TRANSCRIPT_FORMATS
         }
         feed = getattr(post, "feed", None)
         transcript_language = getattr(feed, "language", None) if feed else None
@@ -937,7 +962,7 @@ def generate_feed_xml(feed: Feed) -> Any:
     rss_feed.rss_attrs["xmlns:podcast"] = PODCAST_NAMESPACE
 
     logger.info(f"XML generated for feed with ID: {feed.id}")
-    return rss_feed.to_xml("utf-8")
+    return _feed_to_xml(rss_feed)
 
 
 def generate_aggregate_feed_xml(user: User | None) -> Any:
@@ -993,7 +1018,7 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
     rss_feed.rss_attrs["xmlns:podcast"] = PODCAST_NAMESPACE
 
     logger.info(f"Aggregate XML generated for: {username}")
-    return rss_feed.to_xml("utf-8")
+    return _feed_to_xml(rss_feed)
 
 
 def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post]:

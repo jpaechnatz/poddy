@@ -91,3 +91,38 @@ def test_refinement_keeps_each_segment_confidence() -> None:
     # gets the block confidence as before.
     assert confidences == {1: 0.98, 2: 0.99, 3: 0.75, 4: 0.907}
     assert captured["delete_ids"] == [10, 20, 30]
+
+
+def _gap_processor(previous_end: float | None) -> AudioProcessor:
+    processor = object.__new__(AudioProcessor)
+    processor.logger = mock.MagicMock()
+    session = mock.MagicMock()
+    session.query.return_value.filter.return_value.scalar.return_value = previous_end
+    processor.db_session = session
+    return processor
+
+
+def test_cut_starts_earlier_into_untranscribed_gap() -> None:
+    # Speech ends at 1349.7, the spot starts at 1352.6: the 2.9 s gap held
+    # the spoken "Werbung" that the transcription dropped.
+    group = _group(1352.6, 1378.9)
+    _gap_processor(1349.7)._extend_into_preceding_gap(Post(id=1), [group])
+    assert group.start_time == 1349.7
+
+
+def test_gap_extension_is_capped() -> None:
+    group = _group(2609.6, 2634.5)
+    _gap_processor(2604.4)._extend_into_preceding_gap(Post(id=1), [group])
+    assert group.start_time == 2605.6
+
+
+def test_no_extension_when_speech_runs_up_to_the_ad() -> None:
+    group = _group(64.0, 78.0)
+    _gap_processor(64.5)._extend_into_preceding_gap(Post(id=1), [group])
+    assert group.start_time == 64.0
+
+
+def test_extension_at_episode_start_stops_at_zero() -> None:
+    group = _group(2.0, 30.0)
+    _gap_processor(None)._extend_into_preceding_gap(Post(id=1), [group])
+    assert group.start_time == 0.0
