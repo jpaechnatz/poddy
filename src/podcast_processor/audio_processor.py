@@ -16,6 +16,11 @@ class AudioCutResult(NamedTuple):
     removed_windows_ms: list[tuple[int, int]]
 
 
+# How close a refined block's original edge must be to a cut group's edge for
+# the refined timestamp to replace it.
+REFINED_EDGE_TOLERANCE_SECONDS = 1.0
+
+
 class AudioProcessor:
     """Handles audio processing and ad segment removal from podcast files."""
 
@@ -139,8 +144,16 @@ class AudioProcessor:
                 continue
             refined_start_min, refined_end_max = overlap_window
 
-            new_start = max(group.start_time, refined_start_min)
-            new_end = min(group.end_time, refined_end_max)
+            new_start = (
+                group.start_time
+                if refined_start_min is None
+                else max(group.start_time, refined_start_min)
+            )
+            new_end = (
+                group.end_time
+                if refined_end_max is None
+                else min(group.end_time, refined_end_max)
+            )
             if new_end > new_start:
                 group.start_time = new_start
                 group.end_time = new_end
@@ -194,22 +207,32 @@ class AudioProcessor:
     def _refined_overlap_window_for_group(
         group: Any,
         parsed: list[tuple[float, float, float, float]],
-    ) -> tuple[float, float] | None:
-        overlaps: list[tuple[float, float]] = []
+    ) -> tuple[float | None, float | None] | None:
+        """Refined (start, end) for a cut group; None where it stays as is.
+
+        A group can hold more ad audio than a refined block covers, e.g. a
+        short "Werbung" announcement too brief to be refined before a longer
+        spot. A refined start only applies when its block began at the group's
+        start, and a refined end only when its block ended at the group's end,
+        so one block's refinement never cuts away the rest of the group.
+        """
+        starts: list[float] = []
+        ends: list[float] = []
         for orig_start, orig_end, refined_start, refined_end in parsed:
             overlap = max(
                 0.0,
                 min(group.end_time, orig_end) - max(group.start_time, orig_start),
             )
-            if overlap > 0.0:
-                overlaps.append((refined_start, refined_end))
+            if overlap <= 0.0:
+                continue
+            if orig_start <= group.start_time + REFINED_EDGE_TOLERANCE_SECONDS:
+                starts.append(refined_start)
+            if orig_end >= group.end_time - REFINED_EDGE_TOLERANCE_SECONDS:
+                ends.append(refined_end)
 
-        if not overlaps:
+        if not starts and not ends:
             return None
-
-        refined_start_min = min(s for s, _ in overlaps)
-        refined_end_max = max(e for _, e in overlaps)
-        return refined_start_min, refined_end_max
+        return (min(starts) if starts else None, max(ends) if ends else None)
 
     def merge_ad_segments(
         self,
