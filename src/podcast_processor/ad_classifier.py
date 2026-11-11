@@ -67,6 +67,15 @@ class InvalidModelOutputError(Exception):
     """The LLM returned a truncated or unparseable classification response."""
 
 
+class TruncatedModelOutputError(InvalidModelOutputError):
+    """The LLM stopped at the output token limit (finish_reason=length)."""
+
+
+# Ceiling for the output limit when a cut-off response is retried with a larger
+# one. Reasoning models (e.g. DeepSeek Flash) spend part of it before answering.
+MAX_ESCALATED_OUTPUT_TOKENS = 32768
+
+
 class ClassificationIncompleteError(Exception):
     """At least one transcript chunk could not be classified."""
 
@@ -612,7 +621,10 @@ class AdClassifier:
         return is_valid
 
     def _prepare_api_call(
-        self, model_call_obj: ModelCall, system_prompt: str
+        self,
+        model_call_obj: ModelCall,
+        system_prompt: str,
+        output_token_limit: int | None = None,
     ) -> dict[str, Any] | None:
         """Prepare API call arguments and validate token limits."""
         # Prepare messages for the API call
@@ -677,11 +689,12 @@ class AdClassifier:
             f"Model: '{model_call_obj.model_name}', using max_completion_tokens: {uses_max_completion_tokens}"
         )
 
+        max_tokens = output_token_limit or self.config.openai_max_tokens
         if uses_max_completion_tokens:
-            completion_args["max_completion_tokens"] = self.config.openai_max_tokens
+            completion_args["max_completion_tokens"] = max_tokens
         else:
             # For older models and non-OpenAI models, use max_tokens
-            completion_args["max_tokens"] = self.config.openai_max_tokens
+            completion_args["max_tokens"] = max_tokens
 
         completion_args["response_format"] = {"type": "json_object"}
 
@@ -1101,6 +1114,9 @@ class AdClassifier:
             else model_call_obj.retry_attempts
         )
 
+        # Raised after a cut-off response, so the retry has room to finish.
+        output_token_limit: int | None = None
+
         for attempt in range(retry_count):
             retry_attempts_value = original_retry_attempts + attempt + 1
             current_attempt_num = attempt + 1
@@ -1112,7 +1128,9 @@ class AdClassifier:
                 # Prepare API call and validate token limits first so the
                 # pending-status writer update can also persist the resolved
                 # service_tier for this attempt.
-                completion_args = self._prepare_api_call(model_call_obj, system_prompt)
+                completion_args = self._prepare_api_call(
+                    model_call_obj, system_prompt, output_token_limit
+                )
                 if completion_args is None:
                     return None  # Token limit exceeded
 
@@ -1162,6 +1180,10 @@ class AdClassifier:
 
             except Exception as e:
                 last_error = e
+                if isinstance(e, TruncatedModelOutputError):
+                    output_token_limit = self._next_output_token_limit(
+                        output_token_limit, model_call_obj.id
+                    )
                 if self._is_retryable_error(e):
                     # Preserve the classifier's gradual retry backoff after an
                     # exhausted Flex-to-standard cycle. Do not sleep after the
@@ -1251,6 +1273,19 @@ class AdClassifier:
         model_call_obj.status = "failed_permanent"
         model_call_obj.error_message = str(error)
 
+    def _next_output_token_limit(
+        self, current: int | None, model_call_id: int | None
+    ) -> int:
+        """Double the output limit for the next attempt, up to a ceiling."""
+        base = current or self.config.openai_max_tokens
+        new_limit = max(base, min(base * 2, MAX_ESCALATED_OUTPUT_TOKENS))
+        if new_limit > base:
+            self.logger.info(
+                f"Response for ModelCall {model_call_id} hit the output limit; "
+                f"retrying with {new_limit} tokens instead of {base}."
+            )
+        return new_limit
+
     def _usable_response_content(
         self, *, finish_reason: Any, content: str | None
     ) -> str:
@@ -1260,7 +1295,7 @@ class AdClassifier:
         unparseable answer must be retried, not stored as a successful empty result.
         """
         if finish_reason == "length":
-            raise InvalidModelOutputError(
+            raise TruncatedModelOutputError(
                 "LLM response truncated at the output token limit "
                 "(finish_reason=length)"
             )
