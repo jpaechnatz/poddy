@@ -46,6 +46,7 @@ from podcast_processor.processing_status_manager import ProcessingStatusManager
 from podcast_processor.prompt import (
     DEFAULT_SYSTEM_PROMPT_PATH,
     DEFAULT_USER_PROMPT_TEMPLATE_PATH,
+    system_prompt_for_feed,
 )
 from podcast_processor.transcription_manager import TranscriptionManager
 from shared.config import Config
@@ -1202,7 +1203,10 @@ class PodcastProcessor:
         user_prompt_template = self.get_user_prompt_template(
             DEFAULT_USER_PROMPT_TEMPLATE_PATH
         )
-        system_prompt = self.get_system_prompt(DEFAULT_SYSTEM_PROMPT_PATH)
+        system_prompt = system_prompt_for_feed(
+            self.get_system_prompt(DEFAULT_SYSTEM_PROMPT_PATH),
+            getattr(post, "feed", None),
+        )
         self.ad_classifier.classify(
             transcript_segments=transcript_segments,
             system_prompt=system_prompt,

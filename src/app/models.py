@@ -59,6 +59,9 @@ class Feed(db.Model):  # type: ignore[name-defined, misc]
     always_transcribe = db.Column(db.Boolean, nullable=True)
     # AI summary of the ad-free transcript at the top of the description.
     generate_summary = db.Column(db.Boolean, nullable=True)
+    # Treat the host's or publisher's own promotions (other shows,
+    # subscriptions, events) as ads; null/false = keep them, as by default.
+    cut_self_promo = db.Column(db.Boolean, nullable=True)
     auto_whitelist_new_episodes_override = db.Column(db.Boolean, nullable=True)
     language = db.Column(db.Text, nullable=True)
     # Bumped by `refresh_feed_action` whenever something actually changes
