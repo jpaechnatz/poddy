@@ -184,3 +184,39 @@ def test_get_feed_returns_xml_when_kickoff_skipped(app):
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.data == b"<rss/>cached</rss/>"
+
+
+def test_background_refreshes_run_at_most_two_at_a_time() -> None:
+    """A burst of feed polls must not open more DB connections than the pool has."""
+    import threading
+    import time
+
+    running = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def fake_refresh(_app: object, _feed_id: int) -> None:
+        nonlocal running, peak
+        with guard:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.05)
+        with guard:
+            running -= 1
+
+    with mock.patch.object(
+        feed_routes, "_refresh_feed_in_app_context", side_effect=fake_refresh
+    ):
+        threads = [
+            threading.Thread(
+                target=feed_routes._refresh_feed_background, args=(object(), i)
+            )
+            for i in range(16)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+    assert peak == feed_routes._MAX_CONCURRENT_BACKGROUND_REFRESHES
+    assert running == 0
