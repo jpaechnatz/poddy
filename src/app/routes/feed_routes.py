@@ -5,7 +5,7 @@ import logging
 import secrets
 import time
 from pathlib import Path
-from threading import Lock, Thread
+from threading import BoundedSemaphore, Lock, Thread
 from typing import Any, cast
 from urllib.parse import urlencode
 
@@ -79,6 +79,14 @@ _FEED_GZIP_LEVEL = 3
 _BACKGROUND_REFRESH_LOCK = Lock()
 _BACKGROUND_REFRESH_LAST_KICKOFF: dict[int, float] = {}
 _AUTO_REFRESH_COOLDOWN_SECONDS = 60.0
+
+# A podcast app polls all its feeds within a second or two, which starts one
+# background refresh per feed. Each holds a database connection while it
+# fetches the source feed, so more of them than the pool allows (5 + 5
+# overflow) failed with "QueuePool limit ... reached". The rest wait their
+# turn here, without a connection.
+_MAX_CONCURRENT_BACKGROUND_REFRESHES = 2
+_BACKGROUND_REFRESH_SLOTS = BoundedSemaphore(_MAX_CONCURRENT_BACKGROUND_REFRESHES)
 
 
 def _parse_optional_feed_bool(
@@ -754,6 +762,11 @@ def get_feed_subscribers(feed_id: int) -> ResponseReturnValue:
 
 
 def _refresh_feed_background(app: Flask, feed_id: int) -> None:
+    with _BACKGROUND_REFRESH_SLOTS:
+        _refresh_feed_in_app_context(app, feed_id)
+
+
+def _refresh_feed_in_app_context(app: Flask, feed_id: int) -> None:
     with app.app_context():
         feed = db.session.get(Feed, feed_id)
         if not feed:
