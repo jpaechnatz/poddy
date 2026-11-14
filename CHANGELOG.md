@@ -1,3 +1,17 @@
+## [2.10.4](https://github.com/podly-pure-podcasts/podly_pure_podcasts/compare/v2.10.3...v2.10.4) (2026-11-13)
+
+
+### Bug Fixes
+
+* **llm:** drop sampling params for models that reject them ([#294](https://github.com/podly-pure-podcasts/podly_pure_podcasts/issues/294)) ([afc6ce2](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/afc6ce2ab2ab2e512c49707d8e501e64e3c31039))
+
+## [2.10.3](https://github.com/podly-pure-podcasts/podly_pure_podcasts/compare/v2.10.2...v2.10.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **docker:** forward SIGTERM to services so docker stop exits promptly ([#290](https://github.com/podly-pure-podcasts/podly_pure_podcasts/issues/290)) ([58c667b](https://github.com/podly-pure-podcasts/podly_pure_podcasts/commit/58c667b0028ff12785d2dfad8b7a1e3276a6031a))
+
 ## [2.10.2](https://github.com/podly-pure-podcasts/podly_pure_podcasts/compare/v2.10.1...v2.10.2) (2026-11-09)
 
 
