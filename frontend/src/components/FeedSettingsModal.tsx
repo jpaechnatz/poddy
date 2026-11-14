@@ -62,6 +62,9 @@ export default function FeedSettingsModal({
   const [alwaysTranscribe, setAlwaysTranscribe] = useState(
     feed.always_transcribe === true
   );
+  const [cutSelfPromo, setCutSelfPromo] = useState(
+    feed.cut_self_promo === true
+  );
   const [generateSummary, setGenerateSummary] = useState(
     feed.generate_summary === true
   );
@@ -89,6 +92,7 @@ export default function FeedSettingsModal({
     setNormalizeLoudness(feed.normalize_loudness === true);
     setAlwaysTranscribe(feed.always_transcribe === true);
     setGenerateSummary(feed.generate_summary === true);
+    setCutSelfPromo(feed.cut_self_promo === true);
   }, [feed, llmChapterFallbackGlobalDefault]);
 
   const updateMutation = useMutation({
@@ -165,6 +169,10 @@ export default function FeedSettingsModal({
 
     if (generateSummary !== (feed.generate_summary === true)) {
       settings.generate_summary = generateSummary;
+    }
+
+    if (cutSelfPromo !== (feed.cut_self_promo === true)) {
+      settings.cut_self_promo = cutSelfPromo;
     }
 
     if (Object.keys(settings).length === 0) {
@@ -349,6 +357,26 @@ export default function FeedSettingsModal({
                 this setting is locked on.
               </p>
             )}
+          </div>
+
+          <div>
+            <span className="block text-sm font-medium text-gray-700 mb-2">
+              Self-promotion
+            </span>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={cutSelfPromo}
+                onChange={(e) => setCutSelfPromo(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Cut self-promotion like ads
+            </label>
+            <p className="text-xs text-gray-500 mt-1">
+              Also removes the show&apos;s or publisher&apos;s own promotions
+              (other podcasts, subscriptions, events). Applies to newly
+              processed episodes; LLM mode only.
+            </p>
           </div>
 
           <div>

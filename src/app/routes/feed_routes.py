@@ -154,6 +154,7 @@ def _collect_optional_settings(
         "normalize_loudness",
         "always_transcribe",
         "generate_summary",
+        "cut_self_promo",
     ):
         value, error_response = _parse_optional_feed_bool(payload, field_name)
         if error_response is not None:
@@ -1234,6 +1235,7 @@ def _serialize_feed(
         "normalize_loudness": bool(getattr(feed, "normalize_loudness", False)),
         "always_transcribe": bool(getattr(feed, "always_transcribe", False)),
         "generate_summary": bool(getattr(feed, "generate_summary", False)),
+        "cut_self_promo": bool(getattr(feed, "cut_self_promo", False)),
         "enable_llm_chapter_fallback_tagging": getattr(
             feed, "enable_llm_chapter_fallback_tagging", None
         ),

@@ -134,6 +134,8 @@ class AdClassifier:
 
         # Initialize cue detector for neighbor expansion
         self.cue_detector = CueDetector()
+        # Set per post in classify(): the feed wants self-promotion cut too.
+        self._cut_self_promo = False
 
         # Initialize boundary refiner (conditionally based on config)
         self.boundary_refiner: BoundaryRefiner | None = None
@@ -173,6 +175,10 @@ class AdClassifier:
                 f"No transcript segments to classify for post {post.id}. Skipping."
             )
             return
+
+        self._cut_self_promo = bool(
+            getattr(getattr(post, "feed", None), "cut_self_promo", False)
+        )
 
         classify_params = ClassifyParams(
             system_prompt=system_prompt,
@@ -936,6 +942,8 @@ class AdClassifier:
         if not content_type:
             return base_confidence
 
+        if content_type == "educational/self_promo" and self._cut_self_promo:
+            return base_confidence
         if content_type in {"educational/self_promo", "technical_discussion"}:
             return max(0.0, base_confidence - 0.25)
         if content_type == "transition":
@@ -1520,7 +1528,7 @@ class AdClassifier:
                 confidence = self._neighbor_confidence(
                     has_strong_cue=has_strong_cue,
                     is_transition=is_transition,
-                    is_self_promo=is_self_promo,
+                    is_self_promo=is_self_promo and not self._cut_self_promo,
                     gap_seconds=gap_seconds,
                 )
 

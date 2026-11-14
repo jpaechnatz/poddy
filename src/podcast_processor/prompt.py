@@ -7,6 +7,28 @@ DEFAULT_USER_PROMPT_TEMPLATE_PATH = "src/user_prompt.jinja"
 
 _cue_detector = CueDetector()
 
+# Appended to the system prompt for feeds with cut_self_promo. The default
+# prompt keeps first-party promotion (rule 3 and 5); some listeners want it
+# gone like any other ad.
+SELF_PROMO_AS_ADS_RULE = """
+FEED OVERRIDE (applies to this podcast, replaces decision rules 3 and 5 for \
+self-promotion):
+- Treat the host's or publisher's own promotions as advertisements: plugs for \
+other shows or podcasts of the same publisher, subscriptions or memberships of \
+the publisher, events and live shows, merchandise, newsletters, books and \
+courses, including their announcement and the lines leading back to the show.
+- Mark them with the same confidence you would give an external sponsor ad, \
+and use content_type "promotional_external" for such excerpts.
+- Discussing a product or company as a news topic is still content, not an ad.
+"""
+
+
+def system_prompt_for_feed(system_prompt: str, feed: object | None) -> str:
+    """The system prompt, extended for feeds that cut self-promotion."""
+    if feed is not None and getattr(feed, "cut_self_promo", False):
+        return system_prompt.rstrip() + "\n" + SELF_PROMO_AS_ADS_RULE
+    return system_prompt
+
 
 def transcript_excerpt_for_prompt(
     segments: list[Segment], includes_start: bool, includes_end: bool
