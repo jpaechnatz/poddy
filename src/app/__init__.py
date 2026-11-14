@@ -437,11 +437,20 @@ def _register_api_logging(app: Flask) -> None:
             # What podcast apps fetch (feeds, audio, transcripts, chapters) and
             # with which client, to tell "app never asked" from "server said
             # no". request.path has no query string, so feed tokens stay out.
+            # Which conditional-GET validator the app sent decides whether it
+            # can get a 304 at all (If-Modified-Since alone never does).
+            if request.headers.get("If-None-Match"):
+                validator = "etag"
+            elif request.headers.get("If-Modified-Since"):
+                validator = "ims"
+            else:
+                validator = "none"
             app_logger.info(
-                "[FEED] %s %s status=%s agent=%s",
+                "[FEED] %s %s status=%s cond=%s agent=%s",
                 request.method,
                 path,
                 getattr(response, "status_code", None),
+                validator,
                 (request.headers.get("User-Agent") or "-")[:80],
             )
             return response

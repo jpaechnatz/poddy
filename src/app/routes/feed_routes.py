@@ -2,6 +2,7 @@ import datetime
 import gzip
 import hashlib
 import logging
+import os
 import secrets
 import time
 from pathlib import Path
@@ -57,6 +58,7 @@ from app.routes.feed_utils import (
     user_feed_count,
     whitelist_latest_for_first_member,
 )
+from app.runtime_config import config as app_config
 from app.whisper_languages import normalize_whisper_language, whisper_language_error
 from app.writer.client import writer_client
 
@@ -448,6 +450,42 @@ def _aware_utc(value: datetime.datetime | None) -> datetime.datetime | None:
 FEED_RENDER_VERSION = "5"
 
 
+def _posts_render_fingerprint(feed_ids: list[int]) -> str:
+    """Hash of the processed-episode state that shapes the rendered feed.
+
+    Processing, reprocessing, the no-ad-removal fallback, a summary, a
+    whitelist toggle and audio cleanup all change what the feed shows without
+    touching any feed column, so `last_changed_at` alone kept answering 304.
+    The values (not lengths) and the processed file's size and mtime go in,
+    in a fixed order, so the tag moves exactly when an episode's output does.
+    """
+    if not feed_ids:
+        return ""
+    rows = (
+        db.session.query(
+            Post.id,
+            Post.whitelisted,
+            Post.processed_audio_path,
+            Post.duration,
+            Post.processing_failed,
+            Post.audio_edits,
+            Post.summary,
+        )
+        .filter(Post.feed_id.in_(feed_ids), Post.processed_audio_path.isnot(None))
+        .order_by(Post.id)
+        .all()
+    )
+    digest = hashlib.sha1(usedforsecurity=False)
+    for row in rows:
+        try:
+            stat = os.stat(row.processed_audio_path)
+            file_state: tuple[int, int] | None = (stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            file_state = None
+        digest.update(repr((tuple(row), file_state)).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def _compute_feed_etag(feed: Feed) -> str:
     """Build a strong ETag value (bare hash, unquoted) for `feed`'s state.
 
@@ -462,9 +500,12 @@ def _compute_feed_etag(feed: Feed) -> str:
         .one()
     )
     last_changed = feed.last_changed_at or datetime.datetime.now(datetime.UTC)
+    # Which posts are listed, and the transcript language, also shape the XML.
+    include_unprocessed = bool(getattr(app_config, "autoprocess_on_download", True))
     payload = (
         f"v{FEED_RENDER_VERSION}:{feed.id}:{last_changed.isoformat()}:"
-        f"{post_count or 0}:{max_post_id or 0}"
+        f"{post_count or 0}:{max_post_id or 0}:{include_unprocessed}:"
+        f"{getattr(feed, 'language', None)}:{_posts_render_fingerprint([feed.id])}"
     )
     return hashlib.sha1(payload.encode("utf-8"), usedforsecurity=False).hexdigest()
 
@@ -488,32 +529,23 @@ def _compute_aggregate_etag(user: User | None) -> str:
     user_id = user.id if user else 0
     payload = (
         f"v{FEED_RENDER_VERSION}:agg:{user_id}:{last_changed.isoformat()}:"
-        f"{','.join(map(str, feed_ids))}"
+        f"{','.join(map(str, feed_ids))}:{_posts_render_fingerprint(feed_ids)}"
     )
     return hashlib.sha1(payload.encode("utf-8"), usedforsecurity=False).hexdigest()
 
 
-def _client_has_current_version(
-    etag: str, last_modified_aware: datetime.datetime | None
-) -> bool:
-    """True if the request signals it already has this exact response.
+def _client_has_current_version(etag: str) -> bool:
+    """True if the request's If-None-Match names this exact response.
 
-    Honors `If-None-Match` (preferred) and `If-Modified-Since` (legacy).
-    `etag` is the bare digest (without surrounding quotes).
+    `etag` is the bare digest (without surrounding quotes). Gzipped responses
+    carry a weak ETag, so weak tags match too.
     """
-    # Gzipped responses carry a weak ETag, so match weak tags too. A client
-    # that sends If-None-Match is judged by it alone (RFC 9110 13.1.3), so a
-    # stale tag is not overruled by a still-recent If-Modified-Since.
+    # If-Modified-Since alone never earns a 304 (deliberate deviation from
+    # upstream): processing an episode changes the feed without a timestamp
+    # to compare against, so a date check would hide newly processed episodes.
+    # Such clients get the full feed instead; the ETag covers that state.
     if request.if_none_match:
         return request.if_none_match.contains_weak(etag)
-    if last_modified_aware is not None and request.if_modified_since is not None:
-        # HTTP dates are second-resolution; drop microseconds before comparing.
-        lm = last_modified_aware.replace(microsecond=0)
-        ims = request.if_modified_since
-        if ims.tzinfo is None:
-            ims = ims.replace(tzinfo=datetime.UTC)
-        if lm <= ims:
-            return True
     return False
 
 
@@ -585,9 +617,7 @@ def get_feed(f_id: int) -> Response:
     # scheduler hasn't run yet.
     cached_etag = _compute_feed_etag(feed)
     cached_last_modified = _aware_utc(feed.last_changed_at)
-    if cached_last_modified is not None and _client_has_current_version(
-        cached_etag, cached_last_modified
-    ):
+    if cached_last_modified is not None and _client_has_current_version(cached_etag):
         return _make_feed_304(cached_etag, cached_last_modified)
 
     # Don't block the response on an upstream RSS fetch. The scheduled
@@ -1015,7 +1045,7 @@ def get_user_aggregate_feed(user_id: int) -> Response:
 
     etag = _compute_aggregate_etag(user)
     last_modified = get_aggregate_feed_last_changed_at(user)
-    if _client_has_current_version(etag, last_modified):
+    if _client_has_current_version(etag):
         return _make_feed_304(etag, last_modified)
 
     xml_content = generate_aggregate_feed_xml(user)
