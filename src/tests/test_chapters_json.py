@@ -88,6 +88,7 @@ def test_chapters_json_matches_processed_file(app: Any, tmp_path: Path) -> None:
     assert response.headers["Content-Type"].startswith("application/json+chapters")
     assert image.headers["Content-Type"] == "image/png"
     assert image.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert image.headers["Cache-Control"].startswith("private")
     document = json.loads(response.get_data(as_text=True))
     assert document["version"] == "1.2.0"

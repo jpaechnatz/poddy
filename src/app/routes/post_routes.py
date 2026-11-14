@@ -1429,6 +1429,7 @@ def _post_transcript_response(p_guid: str, fmt: str) -> ResponseReturnValue:
         )
     response = flask.make_response(body)
     response.headers["Content-Type"] = f"{TRANSCRIPT_FORMATS[fmt]}; charset=utf-8"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 
@@ -1469,6 +1470,7 @@ def get_post_chapters_json(p_guid: str) -> ResponseReturnValue:
     )
     response = flask.make_response(json.dumps(document, ensure_ascii=False))
     response.headers["Content-Type"] = "application/json+chapters; charset=utf-8"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 
