@@ -411,6 +411,41 @@ def test_feed_token_for_another_feed_cannot_fetch_slash_guid_episode(
     assert response.status_code == 401
 
 
+@pytest.mark.parametrize(
+    "path_template",
+    [
+        "/post/{}.mp3",
+        "/post/{}/original.mp3",
+        "/post/{}/transcript.srt",
+        "/post/{}/transcript.vtt",
+        "/post/{}/chapters.json",
+        "/post/{}/chapter-images/0",
+    ],
+)
+def test_feed_token_for_another_feed_cannot_fetch_episode_resources(
+    auth_app: Flask, path_template: str
+) -> None:
+    """Poddy's transcript, chapter and image routes stay scoped to the token's feed."""
+    _share_token_for_guid(auth_app, SLASH_GUID)
+    client = auth_app.test_client()
+    with auth_app.app_context():
+        other = Feed(title="Third", rss_url="https://example.com/third-res.xml")
+        db.session.add(other)
+        db.session.commit()
+        other_id = other.id
+    client.post("/api/auth/login", json={"username": "admin", "password": "password"})
+    payload = client.post(f"/api/feeds/{other_id}/share-link").get_json()
+
+    response = auth_app.test_client().get(
+        path_template.format(encode_guid_for_url(SLASH_GUID)),
+        query_string={
+            "feed_token": payload["feed_token"],
+            "feed_secret": payload["feed_secret"],
+        },
+    )
+    assert response.status_code == 401
+
+
 def test_stale_feed_urls_cannot_lock_out_a_valid_token(auth_app: Flask) -> None:
     feed_id, token_id, secret = _share_token(auth_app)
     anon = auth_app.test_client()

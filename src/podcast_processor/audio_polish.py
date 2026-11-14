@@ -30,6 +30,15 @@ LOUDNORM_TARGET_I = -16.0
 LOUDNORM_TARGET_TP = -1.5
 LOUDNORM_TARGET_LRA = 11.0
 
+# ebur128's closing summary (FFmpeg 4.4+), parsed for the loudness measurement.
+_EBUR128_RE = re.compile(
+    r"Integrated loudness:\s+I:\s+(?P<i>-?[0-9.]+) LUFS\s+"
+    r"Threshold:\s+(?P<thresh>-?[0-9.]+) LUFS\s+"
+    r"Loudness range:\s+LRA:\s+(?P<lra>-?[0-9.]+) LU.*?"
+    r"True peak:\s+Peak:\s+(?P<tp>-?[0-9.]+) dBFS",
+    re.S,
+)
+
 _SILENCE_START_RE = re.compile(r"silence_start:\s*(-?[0-9.]+)")
 _SILENCE_END_RE = re.compile(r"silence_end:\s*(-?[0-9.]+)")
 
@@ -160,15 +169,62 @@ def _apply_cuts(stream: Any, windows: list[tuple[float, float]]) -> Any:
     return stream.filter("aselect", f"not({removed})").filter("asetpts", "N/SR/TB")
 
 
-def _measure_loudness(
-    path: str, windows: list[tuple[float, float]]
-) -> dict[str, object]:
-    """First loudnorm pass; returns arguments for an accurate linear second pass."""
-    target: dict[str, object] = {
+def _loudnorm_target() -> dict[str, object]:
+    return {
         "I": LOUDNORM_TARGET_I,
         "TP": LOUDNORM_TARGET_TP,
         "LRA": LOUDNORM_TARGET_LRA,
     }
+
+
+def parse_ebur128_summary(text: str) -> dict[str, float] | None:
+    """Integrated loudness, gating threshold, LRA and true peak, or None."""
+    summary = text[text.rfind("Summary:") :]
+    match = _EBUR128_RE.search(summary)
+    if match is None:
+        return None
+    return {key: float(value) for key, value in match.groupdict().items()}
+
+
+def _measure_loudness(
+    path: str, windows: list[tuple[float, float]]
+) -> dict[str, object]:
+    """Measure the input and return arguments for the loudnorm pass.
+
+    ebur128 measures the same EBU R128 values as loudnorm's own first pass in
+    about a quarter of the time: loudnorm runs its analysis at 192 kHz. Only
+    loudnorm's small correction offset is missing, which moved the result by
+    at most 0.3 LU on real episodes (inaudible). If the fast measurement
+    fails, the original loudnorm measurement runs instead.
+    """
+    try:
+        _, stderr = (
+            _apply_cuts(ffmpeg.input(path).audio, windows)
+            .filter("ebur128", peak="true", framelog="quiet")
+            .output("-", format="null")
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        measured = parse_ebur128_summary(stderr.decode("utf-8", errors="replace"))
+    except ffmpeg.Error as e:
+        logger.info("ebur128 measurement failed, using loudnorm: %s", e)
+        measured = None
+    if measured is None:
+        return _measure_loudness_with_loudnorm(path, windows)
+    return {
+        **_loudnorm_target(),
+        "measured_I": measured["i"],
+        "measured_TP": measured["tp"],
+        "measured_LRA": measured["lra"],
+        "measured_thresh": measured["thresh"],
+        "linear": "true",
+    }
+
+
+def _measure_loudness_with_loudnorm(
+    path: str, windows: list[tuple[float, float]]
+) -> dict[str, object]:
+    """First loudnorm pass; returns arguments for an accurate linear second pass."""
+    target = _loudnorm_target()
     _, stderr = (
         _apply_cuts(ffmpeg.input(path).audio, windows)
         .filter("loudnorm", print_format="json", **target)

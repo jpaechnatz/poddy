@@ -39,11 +39,39 @@ def _sub_frame(chapter: Chapter, frame_id: str) -> Any | None:
     return next((f for f in chapter.sub_frames if f.FrameID == frame_id), None)
 
 
+# Image types a chapter image may be served as, by their leading bytes. The
+# MIME string in the APIC frame comes from the source file and is not trusted:
+# served as text/html it would run script on this origin.
+_IMAGE_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _image_mime(data: bytes) -> str | None:
+    for signature, mime in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def chapter_image(chapter: Chapter) -> tuple[bytes, str] | None:
+    """The chapter's embedded image and its type, or None if it is no image.
+
+    The type is taken from the image data itself, never from the frame.
+    """
     frame = _sub_frame(chapter, "APIC")
     if frame is None or not getattr(frame, "data", None):
         return None
-    return bytes(frame.data), str(getattr(frame, "mime", "") or "image/jpeg")
+    data = bytes(frame.data)
+    mime = _image_mime(data)
+    if mime is None:
+        return None
+    return data, mime
 
 
 def build_chapters_json(
