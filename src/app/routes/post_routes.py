@@ -1489,7 +1489,9 @@ def get_post_chapter_image(p_guid: str, index: int) -> ResponseReturnValue:
     data, mime = image
     response = flask.make_response(data)
     response.headers["Content-Type"] = mime
-    response.headers["Cache-Control"] = "public, max-age=86400"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Token-protected, so shared caches must not keep a copy.
+    response.headers["Cache-Control"] = "private, max-age=86400"
     return response
 
 

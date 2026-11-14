@@ -86,6 +86,9 @@ def test_chapters_json_matches_processed_file(app: Any, tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.headers["Content-Type"].startswith("application/json+chapters")
+    assert image.headers["Content-Type"] == "image/png"
+    assert image.headers["X-Content-Type-Options"] == "nosniff"
+    assert image.headers["Cache-Control"].startswith("private")
     document = json.loads(response.get_data(as_text=True))
     assert document["version"] == "1.2.0"
     assert document["chapters"] == [
@@ -153,3 +156,27 @@ def test_chapter_routes_hide_unwhitelisted_posts(app: Any, tmp_path: Path) -> No
 
     assert client.get("/post/with/chapters.json").status_code == 404
     assert client.get("/post/with/chapter-images/0").status_code == 404
+
+
+def _apic_chapter(mime: str, data: bytes) -> Chapter:
+    return Chapter(
+        "c",
+        "Bild",
+        0,
+        1_000,
+        sub_frames=[APIC(encoding=3, mime=mime, type=0, desc="", data=data)],
+    )
+
+
+def test_chapter_image_type_comes_from_the_data_not_the_frame() -> None:
+    from app.chapters_json import chapter_image
+
+    jpeg = b"\xff\xd8\xff\xe0" + b"0" * 20
+    # A source file can claim any MIME type; HTML must never be served as such.
+    assert chapter_image(_apic_chapter("text/html", jpeg)) == (jpeg, "image/jpeg")
+    assert (
+        chapter_image(_apic_chapter("text/html", b"<script>alert(1)</script>")) is None
+    )
+    assert chapter_image(_apic_chapter("image/png", b"<svg onload=alert(1)>")) is None
+    webp = b"RIFF\x00\x00\x00\x00WEBPVP8 "
+    assert chapter_image(_apic_chapter("image/webp", webp)) == (webp, "image/webp")
