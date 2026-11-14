@@ -171,7 +171,9 @@ def test_fetch_feed(mock_parse, mock_feed_data):
     result = fetch_feed("https://example.com/feed.xml")
 
     assert result == mock_feed_data
-    mock_parse.assert_called_once_with("https://example.com/feed.xml")
+    mock_parse.assert_called_once()
+    assert mock_parse.call_args.args == ("https://example.com/feed.xml",)
+    assert len(mock_parse.call_args.kwargs["handlers"]) == 2
 
 
 def test_refresh_feed(mock_db_session):

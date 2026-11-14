@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import urllib.request
 import uuid
 from collections.abc import Iterable
 from email.utils import format_datetime, parsedate_to_datetime
@@ -409,9 +410,39 @@ def _raise_for_failed_fetch(feed_data: feedparser.FeedParserDict) -> None:
         )
 
 
+# Seconds a feed server may stay silent while connecting or sending. feedparser
+# sets no timeout, so a stalled server held the refresh thread and its database
+# connection forever, and with the background refresh limit it could block
+# every other feed's refresh.
+FEED_FETCH_TIMEOUT_SECONDS = 30.0
+
+
+class _TimeoutHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req: Any) -> Any:
+        req.timeout = FEED_FETCH_TIMEOUT_SECONDS
+        return super().http_open(req)
+
+
+class _TimeoutHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req: Any) -> Any:
+        req.timeout = FEED_FETCH_TIMEOUT_SECONDS
+        return super().https_open(req)
+
+
 def fetch_feed(url: str) -> feedparser.FeedParserDict:
     logger.info("Fetching feed from URL: %s", _url_for_log(url))
-    feed_data = feedparser.parse(url)
+    # Subclasses of the default handlers replace them in feedparser's opener.
+    try:
+        feed_data = feedparser.parse(
+            url, handlers=[_TimeoutHTTPHandler(), _TimeoutHTTPSHandler()]
+        )
+    except OSError as exc:
+        # feedparser turns connection errors into bozo results but lets a read
+        # timeout or reset escape; report it the same way.
+        logger.warning("Feed fetch failed for %s: %s", _url_for_log(url), exc)
+        return feedparser.FeedParserDict(
+            bozo=1, bozo_exception=exc, entries=[], feed=feedparser.FeedParserDict()
+        )
     for entry in feed_data.entries:
         entry.id = get_guid(entry)
     return feed_data

@@ -152,6 +152,9 @@ class Post(db.Model):  # type: ignore[name-defined, misc]
         db.UniqueConstraint(
             "feed_id", "download_url", name="uq_post_feed_id_download_url"
         ),
+        # Episode routes, feed-token checks and jobs look posts up by guid
+        # alone; the (feed_id, guid) constraint cannot serve that lookup.
+        db.Index("ix_post_guid", "guid"),
     )
 
     def audio_len_bytes(self) -> int:

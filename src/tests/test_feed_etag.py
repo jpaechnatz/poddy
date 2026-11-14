@@ -256,7 +256,9 @@ def test_get_feed_returns_200_when_etag_does_not_match(app):
     assert resp.data == b"<rss/>"
 
 
-def test_get_feed_returns_304_when_if_modified_since_recent(app):
+def test_get_feed_ignores_if_modified_since_without_etag(app):
+    """If-Modified-Since alone is not trusted: processing an episode changes the
+    feed without a timestamp to compare against (Poddy deviates from upstream)."""
     app.testing = True
     _register_feed_routes(app)
     _reset_kickoff_state()
@@ -268,19 +270,20 @@ def test_get_feed_returns_304_when_if_modified_since_recent(app):
         db.session.commit()
 
     client = app.test_client()
-    # Client claims it last fetched 1 hour AFTER our last_changed_at — so 304.
+    # Client claims it last fetched 1 hour AFTER our last_changed_at.
     later = dt.datetime(2026, 1, 1, 1, 0, 0, tzinfo=dt.UTC)
     with (
-        mock.patch("app.routes.feed_routes._spawn_async_refresh") as mock_spawn,
-        mock.patch("app.routes.feed_routes.generate_feed_xml") as mock_gen,
+        mock.patch("app.routes.feed_routes._spawn_async_refresh"),
+        mock.patch(
+            "app.routes.feed_routes.generate_feed_xml", return_value=b"<rss/>"
+        ) as mock_gen,
     ):
         resp = client.get(
             f"/feed/{feed_id}", headers={"If-Modified-Since": http_date(later)}
         )
 
-    assert resp.status_code == 304
-    mock_spawn.assert_not_called()
-    mock_gen.assert_not_called()
+    assert resp.status_code == 200
+    mock_gen.assert_called_once()
 
 
 def test_get_feed_etag_changes_when_last_changed_at_changes(app):

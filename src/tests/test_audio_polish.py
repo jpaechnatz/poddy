@@ -279,3 +279,58 @@ def test_polish_options_are_read_before_processing_not_in_finalize() -> None:
     assert steps.call_args.kwargs["polish_options"] == PolishOptions(
         trim_silence=True, normalize_loudness=False
     )
+
+
+EBUR128_SUMMARY = """[Parsed_ebur128_0 @ 0x5618b2c4a280] Summary:
+
+  Integrated loudness:
+    I:         -22.0 LUFS
+    Threshold: -32.0 LUFS
+
+  Loudness range:
+    LRA:         2.9 LU
+    Threshold: -42.0 LUFS
+    LRA low:   -23.5 LUFS
+    LRA high:  -20.6 LUFS
+
+  True peak:
+    Peak:       -3.5 dBFS
+"""
+
+
+def test_parse_ebur128_summary() -> None:
+    from podcast_processor.audio_polish import parse_ebur128_summary
+
+    assert parse_ebur128_summary(EBUR128_SUMMARY) == {
+        "i": -22.0,
+        "thresh": -32.0,
+        "lra": 2.9,
+        "tp": -3.5,
+    }
+    assert parse_ebur128_summary("no summary here") is None
+
+
+def test_fast_measurement_matches_loudnorm_measurement(tmp_path: Path) -> None:
+    from podcast_processor import audio_polish
+
+    path = str(_tone_silence_tone(tmp_path, volume_db=-30.0))
+    fast = audio_polish._measure_loudness(path, [(5.0, 9.0)])
+    exact = audio_polish._measure_loudness_with_loudnorm(path, [(5.0, 9.0)])
+
+    for key in ("measured_I", "measured_TP", "measured_thresh"):
+        assert float(str(fast[key])) == pytest.approx(float(str(exact[key])), abs=0.3)
+    assert "offset" not in fast
+
+
+def test_failed_fast_measurement_falls_back_to_loudnorm(tmp_path: Path) -> None:
+    from podcast_processor import audio_polish
+
+    path = str(_tone_silence_tone(tmp_path, volume_db=-30.0))
+    with (
+        mock.patch.object(audio_polish, "parse_ebur128_summary", return_value=None),
+        mock.patch.object(
+            audio_polish, "_measure_loudness_with_loudnorm", return_value={"I": -16.0}
+        ) as fallback,
+    ):
+        assert audio_polish._measure_loudness(path, []) == {"I": -16.0}
+    fallback.assert_called_once_with(path, [])

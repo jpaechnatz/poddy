@@ -31,14 +31,15 @@ def test_feed_requests_are_logged_without_query(
         try:
             app.test_client().get(
                 "/post/ep1/transcript.vtt?feed_token=abc&feed_secret=SECRET",
-                headers={"User-Agent": "iCatcher!/15.2.2"},
+                headers={"User-Agent": "iCatcher!/15.2.2", "If-None-Match": '"x"'},
             )
         finally:
             global_logger.removeHandler(caplog.handler)
 
     lines = [r.getMessage() for r in caplog.records if "[FEED]" in r.getMessage()]
     assert lines == [
-        "[FEED] GET /post/ep1/transcript.vtt status=200 agent=iCatcher!/15.2.2"
+        "[FEED] GET /post/ep1/transcript.vtt status=200 cond=etag "
+        "agent=iCatcher!/15.2.2"
     ]
     assert "SECRET" not in caplog.text
 

@@ -143,6 +143,7 @@ def test_transcript_route_serves_vtt_for_processed_post(app: Any) -> None:
     srt = client.get("/post/ready/transcript.srt")
     assert srt.status_code == 200
     assert srt.headers["Content-Type"] == "application/x-subrip; charset=utf-8"
+    assert srt.headers["X-Content-Type-Options"] == "nosniff"
     assert srt.get_data(as_text=True) == (
         "1\n00:00:00,000 --> 00:00:03,000\nHi\n\n"
         "2\n00:00:05,000 --> 00:00:06,000\nBye\n"
