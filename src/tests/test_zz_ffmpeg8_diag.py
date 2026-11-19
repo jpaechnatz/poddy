@@ -113,6 +113,10 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
 
     for label, args in {
         "cli_af_quoted": ["-af", "aselect='not(between(t,5.3,10.7))',asetpts=N/SR/TB"],
+        "cli_zero": ["-af", "aselect=0"],
+        "cli_lt5": ["-af", "aselect='lt(t,5)'"],
+        "cli_lt5_1thread": ["-filter_threads", "1", "-af", "aselect='lt(t,5)'"],
+        "cli_atrim": ["-af", "atrim=end=5"],
         "cli_fc_escaped": [
             "-filter_complex",
             "[0:a]aselect=not(between(t\\,5.3\\,10.7)),asetpts=N/SR/TB[a]",
@@ -149,6 +153,24 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
             f"{label} rc={run.returncode} decisions={len(decisions)} sample={decisions[200:203]} parsed={parsed[:3]}"
         )
         add(f"{label} RESULT " + _probe(out)[:260])
+
+    filters = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-filters"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    add(
+        "FILTERS "
+        + " | ".join(line.strip() for line in filters.splitlines() if "select" in line)
+    )
+    help_ = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-h", "filter=aselect"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    add("HELP " + help_.replace("\n", " | ")[:700])
 
     polished = tmp_path / "polished.mp3"
     shutil.copy(src, polished)
