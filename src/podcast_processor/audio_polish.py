@@ -9,8 +9,8 @@ import json
 import logging
 import os
 import re
+import subprocess
 from dataclasses import dataclass
-from typing import Any
 
 import ffmpeg
 
@@ -113,22 +113,32 @@ def polish_audio(path: str, options: PolishOptions) -> list[tuple[float, float]]
 
         chapters = read_chapters(path)
         sample_rate, bitrate = _stream_format(path)
+        original_duration = _duration_seconds(path)
         loudnorm_args = (
             _measure_loudness(path, windows) if options.normalize_loudness else None
         )
 
         tmp_path = f"{path}.polish.mp3"
-        stream = _apply_cuts(ffmpeg.input(path).audio, windows)
+        chain = "anull"
         if loudnorm_args is not None:
-            stream = stream.filter("loudnorm", **loudnorm_args).filter(
-                "aresample", sample_rate
-            )
+            chain = f"{_filter('loudnorm', loudnorm_args)},aresample={sample_rate}"
         try:
-            (
-                stream.output(tmp_path, acodec="libmp3lame", **{"b:a": bitrate})
-                .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
+            _run_ffmpeg(
+                [
+                    "-i",
+                    path,
+                    "-filter_complex",
+                    _cut_filtergraph(windows, chain),
+                    "-map",
+                    "[out]",
+                    "-acodec",
+                    "libmp3lame",
+                    "-b:a",
+                    bitrate,
+                    tmp_path,
+                ]
             )
+            _check_cut_duration(original_duration, tmp_path, windows)
             os.replace(tmp_path, path)
         finally:
             if os.path.exists(tmp_path):
@@ -162,21 +172,61 @@ def polish_audio(path: str, options: PolishOptions) -> list[tuple[float, float]]
     return windows
 
 
-def _apply_cuts(stream: Any, windows: list[tuple[float, float]]) -> Any:
+def _cut_filtergraph(windows: list[tuple[float, float]], chain: str) -> str:
+    """Filtergraph that removes windows from input 0's audio, then runs chain.
+
+    The result is labelled [out]. asegment splits the audio at the window
+    edges (exact samples, by timestamp like silencedetect), the removed
+    segments go to anullsink and concat joins the rest. This replaces aselect,
+    which passed every frame through on Ubuntu's FFmpeg 8.0.1 build, so
+    nothing was cut while chapters still moved. It decodes once and streams,
+    so memory stays flat on long episodes.
+    """
     if not windows:
-        return stream
-    removed = "+".join(f"between(t,{start:.3f},{end:.3f})" for start, end in windows)
-    # aselect keeps or drops whole frames. FFmpeg 8 can hand it frames far
-    # longer than a pause, so a frame starting outside every window kept the
-    # silence inside it and nothing was cut. Fixed 1024-sample frames
-    # (about 23 ms) and timestamps rebuilt from the sample count make the cut
-    # independent of how the decoder delivers audio.
-    return (
-        stream.filter("asetnsamples", n=1024, p=0)
-        .filter("asetpts", "N/SR/TB")
-        .filter("aselect", f"not({removed})")
-        .filter("asetpts", "N/SR/TB")
-    )
+        return f"[0:a]{chain}[out]"
+    points = "|".join(f"{start:.3f}|{end:.3f}" for start, end in windows)
+    count = 2 * len(windows) + 1
+    labels = "".join(f"[seg{i}]" for i in range(count))
+    parts = [f"[0:a]asegment=timestamps={points}{labels}"]
+    parts += [f"[seg{i}]anullsink" for i in range(1, count, 2)]
+    kept = "".join(f"[seg{i}]" for i in range(0, count, 2))
+    parts.append(f"{kept}concat=n={len(windows) + 1}:v=0:a=1,{chain}[out]")
+    return ";".join(parts)
+
+
+def _filter(name: str, args: dict[str, object]) -> str:
+    return name + "=" + ":".join(f"{key}={value}" for key, value in args.items())
+
+
+def _run_ffmpeg(args: list[str]) -> str:
+    """Run ffmpeg and return its stderr; failures raise ffmpeg.Error."""
+    cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", *args]
+    result = subprocess.run(cmd, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise ffmpeg.Error("ffmpeg", result.stdout, result.stderr)
+    return result.stderr.decode("utf-8", errors="replace")
+
+
+def _check_cut_duration(
+    original: float | None, polished_path: str, windows: list[tuple[float, float]]
+) -> None:
+    """Refuse a polished file whose length does not match the removed windows.
+
+    Callers shift chapters and transcripts by the returned windows, so audio
+    that was not actually cut must never be reported as cut.
+    """
+    if not windows:
+        return
+    actual = _duration_seconds(polished_path)
+    if original is None or actual is None:
+        raise RuntimeError("cannot verify the length of the trimmed audio")
+    expected = original - sum(end - start for start, end in windows)
+    # Every window is at least 1.4 s long, so a missed cut is far outside this.
+    tolerance = min(end - start for start, end in windows) / 2
+    if abs(actual - expected) > tolerance:
+        raise RuntimeError(
+            f"trimmed audio is {actual:.2f}s long, expected {expected:.2f}s"
+        )
 
 
 def _loudnorm_target() -> dict[str, object]:
@@ -208,13 +258,20 @@ def _measure_loudness(
     fails, the original loudnorm measurement runs instead.
     """
     try:
-        _, stderr = (
-            _apply_cuts(ffmpeg.input(path).audio, windows)
-            .filter("ebur128", peak="true", framelog="quiet")
-            .output("-", format="null")
-            .run(capture_stdout=True, capture_stderr=True)
+        stderr = _run_ffmpeg(
+            [
+                "-i",
+                path,
+                "-filter_complex",
+                _cut_filtergraph(windows, "ebur128=peak=true:framelog=quiet"),
+                "-map",
+                "[out]",
+                "-f",
+                "null",
+                "-",
+            ]
         )
-        measured = parse_ebur128_summary(stderr.decode("utf-8", errors="replace"))
+        measured = parse_ebur128_summary(stderr)
     except ffmpeg.Error as e:
         logger.info("ebur128 measurement failed, using loudnorm: %s", e)
         measured = None
@@ -235,13 +292,21 @@ def _measure_loudness_with_loudnorm(
 ) -> dict[str, object]:
     """First loudnorm pass; returns arguments for an accurate linear second pass."""
     target = _loudnorm_target()
-    _, stderr = (
-        _apply_cuts(ffmpeg.input(path).audio, windows)
-        .filter("loudnorm", print_format="json", **target)
-        .output("-", format="null")
-        .run(capture_stdout=True, capture_stderr=True)
+    text = _run_ffmpeg(
+        [
+            "-i",
+            path,
+            "-filter_complex",
+            _cut_filtergraph(
+                windows, _filter("loudnorm", {**target, "print_format": "json"})
+            ),
+            "-map",
+            "[out]",
+            "-f",
+            "null",
+            "-",
+        ]
     )
-    text = stderr.decode("utf-8", errors="replace")
     json_start = text.rfind("{")
     json_end = text.rfind("}")
     try:

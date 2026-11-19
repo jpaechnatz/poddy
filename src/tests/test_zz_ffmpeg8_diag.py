@@ -6,11 +6,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import ffmpeg
 import pytest
 
 from podcast_processor import audio_polish
-from podcast_processor.audio_polish import PolishOptions, _apply_cuts
+from podcast_processor.audio_polish import PolishOptions
 
 from .test_audio_polish import _tone_silence_tone
 
@@ -49,128 +48,80 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
     windows = audio_polish.silence_cut_windows(audio_polish.detect_silences(str(src)))
     add(f"WINDOWS {windows}")
 
-    for label, build in {
-        "aselect_t": lambda i: _apply_cuts(i, windows),
-        "aselect_only": lambda i: i.filter(
-            "aselect", f"not(between(t,{windows[0][0]:.3f},{windows[0][1]:.3f}))"
-        ),
-        "aselect_pts": lambda i: i.filter(
-            "aselect", f"not(between(pts*TB,{windows[0][0]:.3f},{windows[0][1]:.3f}))"
-        ).filter("asetpts", "N/SR/TB"),
-        "atrim_first": lambda i: i.filter("atrim", end=windows[0][0]),
-        "asetpts_first": lambda i: (
-            i.filter("asetpts", "N/SR/TB")
-            .filter(
-                "aselect", f"not(between(t,{windows[0][0]:.3f},{windows[0][1]:.3f}))"
-            )
-            .filter("asetpts", "N/SR/TB")
-        ),
-    }.items():
-        out = tmp_path / f"{label}.mp3"
-        stream = (
-            build(ffmpeg.input(str(src)).audio)
-            .output(str(out), acodec="libmp3lame", **{"b:a": "128k"})
-            .overwrite_output()
-        )
-        add(f"{label} ARGS {' '.join(stream.compile())}")
-        try:
-            _, err = stream.run(capture_stdout=True, capture_stderr=True)
-            add(f"{label} OK " + _probe(out))
-            add(
-                f"{label} STDERR "
-                + err.decode(errors="replace")[-600:].replace("\n", " | ")
-            )
-        except ffmpeg.Error as e:
-            add(
-                f"{label} ERROR "
-                + (e.stderr or b"").decode(errors="replace")[-800:].replace("\n", " | ")
-            )
-
-    info = subprocess.run(
+    long_src = tmp_path / "long.mp3"
+    subprocess.run(
         [
             "ffmpeg",
-            "-hide_banner",
-            "-i",
-            str(src),
-            "-af",
-            "ashowinfo",
+            "-v",
+            "error",
+            "-y",
             "-f",
-            "null",
-            "-",
+            "lavfi",
+            "-i",
+            "sine=f=440:d=60",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            str(long_src),
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stderr
-    sizes = [
-        line.split("nb_samples:")[1].split()[0]
-        for line in info.splitlines()
-        if "nb_samples:" in line
-    ]
-    add(
-        f"FRAMES count={len(sizes)} first={sizes[:5]} max={max(sizes, key=int) if sizes else None}"
+        check=True,
     )
-
-    for label, args in {
-        "cli_af_quoted": ["-af", "aselect='not(between(t,5.3,10.7))',asetpts=N/SR/TB"],
-        "cli_zero": ["-af", "aselect=0"],
-        "cli_lt5": ["-af", "aselect='lt(t,5)'"],
-        "cli_lt5_1thread": ["-filter_threads", "1", "-af", "aselect='lt(t,5)'"],
-        "cli_atrim": ["-af", "atrim=end=5"],
-        "cli_fc_escaped": [
-            "-filter_complex",
-            "[0:a]aselect=not(between(t\\,5.3\\,10.7)),asetpts=N/SR/TB[a]",
-            "-map",
-            "[a]",
-        ],
-    }.items():
+    many = [(round(k * 0.4 + 0.1, 3), round(k * 0.4 + 0.3, 3)) for k in range(150)]
+    for label, source, wins, expect in [
+        ("asegment_one", src, windows, 16.0 - sum(e - s for s, e in windows)),
+        ("asegment_many", long_src, many, 60.0 - sum(e - s for s, e in many)),
+    ]:
         out = tmp_path / f"{label}.mp3"
+        graph = audio_polish._cut_filtergraph(wins, "anull")
         run = subprocess.run(
             [
                 "ffmpeg",
                 "-hide_banner",
-                "-v",
-                "debug",
                 "-y",
                 "-i",
-                str(src),
-                *args,
+                str(source),
+                "-filter_complex",
+                graph,
+                "-map",
+                "[out]",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "128k",
                 str(out),
             ],
             capture_output=True,
             text=True,
             check=False,
         )
-        decisions = [
-            line.strip()[-120:] for line in run.stderr.splitlines() if "select:" in line
-        ]
-        parsed = [
-            line.strip()[-160:]
-            for line in run.stderr.splitlines()
-            if "aselect" in line and ("args" in line or "Setting" in line)
-        ]
-        add(
-            f"{label} rc={run.returncode} decisions={len(decisions)} sample={decisions[200:203]} parsed={parsed[:3]}"
-        )
+        add(f"{label} rc={run.returncode} expect={expect:.2f} graph_len={len(graph)}")
         add(f"{label} RESULT " + _probe(out)[:260])
+        add(f"{label} STDERR " + run.stderr[-500:].replace("\n", " | "))
 
-    filters = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-filters"],
+    out = tmp_path / "concat_atrim.mp3"
+    run = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-y",
+            "-i",
+            str(src),
+            "-filter_complex",
+            "[0:a]asplit[x][y];[x]atrim=end=5.3[a];[y]atrim=start=10.7,asetpts=PTS-STARTPTS[b];"
+            "[a][b]concat=n=2:v=0:a=1[out]",
+            "-map",
+            "[out]",
+            "-c:a",
+            "libmp3lame",
+            str(out),
+        ],
         capture_output=True,
         text=True,
         check=False,
-    ).stdout
-    add(
-        "FILTERS "
-        + " | ".join(line.strip() for line in filters.splitlines() if "select" in line)
     )
-    help_ = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-h", "filter=aselect"],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    add("HELP " + help_.replace("\n", " | ")[:700])
+    add(f"concat_atrim rc={run.returncode} RESULT " + _probe(out)[:260])
+    add("concat_atrim STDERR " + run.stderr[-300:].replace("\n", " | "))
 
     polished = tmp_path / "polished.mp3"
     shutil.copy(src, polished)
