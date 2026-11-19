@@ -176,8 +176,11 @@ neu gestartet.
 ## Downloads über den Heimanschluss (z. B. Patreon)
 
 Läuft Poddy auf einem Server im Rechenzentrum (VPS), verweigern manche
-Anbieter die Audiodateien, z. B. Patreon mit „Download failed“ / 403. Dann
-lädt Poddy diese Folgen über einen kleinen Proxy auf dem Pi zu Hause.
+Anbieter die Audiodateien, z. B. Patreon mit „Download failed“ / 403. Andere
+spielen Werbung passend zum Standort der Server-IP ein, z. B. französische
+Spots, wenn der Server als französisch gilt; die erkennt Poddy bei deutscher
+Transkription nicht. In beiden Fällen lädt Poddy die Folgen über einen kleinen
+Proxy auf dem Pi zu Hause.
 
 Auf dem **Pi** (muss im selben Tailnet sein):
 
@@ -207,6 +210,20 @@ docker exec podly-pure-podcasts python3 -c "import requests; print(requests.get(
 Es muss die IP deines Heimanschlusses erscheinen. Alle anderen Podcasts laden
 weiter direkt.
 
+Gegen standortabhängige Werbung `DOWNLOAD_PROXY_HOSTS` weglassen, dann laufen
+alle Folgen-Downloads über den Pi. Welches Land die Hoster sehen, zeigt:
+
+```bash
+docker exec podly-pure-podcasts python3 -c "import requests; print(requests.get('https://ipinfo.io/country', timeout=15).text, requests.get('https://ipinfo.io/country', proxies={'https': 'http://100.101.102.103:8888'}, timeout=15).text)"
+```
+
+Erst direkt, dann über den Pi; erwartet z. B. `FR` und `DE`.
+
+Ist der Pi nicht erreichbar, lädt Poddy die Folge direkt und schreibt eine
+Warnung ins Log (dann eventuell mit der Werbung für den Server-Standort).
+`DOWNLOAD_PROXY_FALLBACK=none` lässt den Download stattdessen scheitern, etwa
+wenn ein Anbieter den Server ohnehin sperrt.
+
 ## Ohne Tailscale
 
 Nur im Heimnetz: In Schritt 3 `PODLY_TRUSTED_PROXY` und die Datei `.env`
@@ -221,6 +238,32 @@ docker compose -f compose.pi.yml logs --tail 100  # letzte Logzeilen
 ```
 
 Vor dem Teilen von Logs API-Keys und Passwörter schwärzen.
+
+## Log begrenzen
+
+`src/instance/logs/app.log` wächst sonst unbegrenzt. logrotate auf dem Host
+kürzt es wöchentlich oder ab 50 MB und behält vier ältere Stände komprimiert.
+`copytruncate` ist nötig, weil Writer und Web-App die Datei offen halten.
+
+```bash
+sudo tee /etc/logrotate.d/poddy >/dev/null <<EOF
+$HOME/poddy/src/instance/logs/*.log {
+    su $(id -un) $(id -gn)
+    weekly
+    maxsize 50M
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
+sudo logrotate -d /etc/logrotate.d/poddy 2>&1 | tail -5
+```
+
+Der letzte Befehl ist ein Probelauf ohne Änderung. Ältere Einträge stehen danach
+in `app.log.1` bzw. `app.log.2.gz` usw.
 
 ## Updates und Backup
 

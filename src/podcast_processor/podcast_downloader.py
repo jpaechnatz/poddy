@@ -61,6 +61,17 @@ def download_proxies(url: str) -> dict[str, str] | None:
     return {"http": proxy, "https": proxy}
 
 
+def proxy_fallback_enabled() -> bool:
+    """Download directly when DOWNLOAD_PROXY cannot be reached (default).
+
+    DOWNLOAD_PROXY_FALLBACK=none fails the download instead, for setups where
+    a direct download is pointless (a host that blocks the server) or
+    unwanted (ads chosen for the server's location).
+    """
+    value = (os.environ.get("DOWNLOAD_PROXY_FALLBACK") or "direct").strip().lower()
+    return value != "none"
+
+
 class PodcastDownloader:
     """
     Handles downloading podcast episodes with robust file checking and path management.
@@ -130,44 +141,93 @@ class PodcastDownloader:
                 _redact_proxy(proxies["https"]),
             )
         try:
-            with requests.get(
-                audio_link, stream=True, timeout=60, headers=headers, **request_options
-            ) as response:
-                if response.status_code == 200:
-                    # Write to a side file and move it into place only when
-                    # complete: a download cut off midway must not be mistaken
-                    # for the finished episode ("already downloaded") next time.
-                    partial_path = download_path + ".part"
-                    try:
-                        with open(partial_path, "wb") as file:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                file.write(chunk)
-                        os.replace(partial_path, download_path)
-                    finally:
-                        if os.path.exists(partial_path):
-                            os.remove(partial_path)
-                    self.logger.info("Download complete.")
-                else:
-                    self.last_error = f"HTTP {response.status_code}"
-                    self.logger.info(
-                        f"Failed to download the podcast episode, response: {response.status_code}"
-                    )
-                    return None
-        except requests.exceptions.ProxyError:
-            # The exception text holds the full episode URL; keep it out of the
-            # job status and the log.
-            self.last_error = (
-                f"DOWNLOAD_PROXY {_redact_proxy(proxies['https'])} not reachable"
-                if proxies
-                else "proxy not reachable"
+            return self._fetch_to_path(
+                audio_link, headers, request_options, download_path
             )
-            self.logger.warning("Download failed: %s", self.last_error)
-            return None
+        except (
+            requests.exceptions.ProxyError,
+            requests.exceptions.ConnectTimeout,
+        ) as exc:
+            if not proxies:
+                # The exception text holds the full episode URL; keep it out
+                # of the job status and the log.
+                self.last_error = (
+                    "proxy not reachable"
+                    if isinstance(exc, requests.exceptions.ProxyError)
+                    else f"network error ({type(exc).__name__})"
+                )
+                self.logger.warning("Download failed: %s", self.last_error)
+                return None
+            return self._download_without_proxy(
+                f"DOWNLOAD_PROXY {_redact_proxy(proxies['https'])} not reachable",
+                audio_link,
+                headers,
+                download_path,
+            )
         except requests.RequestException as exc:
             self.last_error = f"network error ({type(exc).__name__})"
             self.logger.warning("Download failed: %s", self.last_error)
             return None
 
+    def _download_without_proxy(
+        self,
+        proxy_error: str,
+        audio_link: str,
+        headers: dict[str, Any],
+        download_path: str,
+    ) -> str | None:
+        """Fall back to a direct download when the proxy is unreachable."""
+        if not proxy_fallback_enabled():
+            self.last_error = proxy_error
+            self.logger.warning("Download failed: %s", self.last_error)
+            return None
+        self.logger.warning(
+            "%s; downloading directly instead (ads may then be chosen for the "
+            "server's location)",
+            proxy_error,
+        )
+        try:
+            result = self._fetch_to_path(audio_link, headers, {}, download_path)
+        except requests.RequestException as exc:
+            self.last_error = (
+                f"{proxy_error}; direct download: network error ({type(exc).__name__})"
+            )
+            self.logger.warning("Download failed: %s", self.last_error)
+            return None
+        if result is None:
+            self.last_error = f"{proxy_error}; direct download: {self.last_error}"
+        return result
+
+    def _fetch_to_path(
+        self,
+        audio_link: str,
+        headers: dict[str, Any],
+        request_options: dict[str, Any],
+        download_path: str,
+    ) -> str | None:
+        """Download audio_link to download_path; None on a non-200 answer."""
+        with requests.get(
+            audio_link, stream=True, timeout=60, headers=headers, **request_options
+        ) as response:
+            if response.status_code != 200:
+                self.last_error = f"HTTP {response.status_code}"
+                self.logger.info(
+                    f"Failed to download the podcast episode, response: {response.status_code}"
+                )
+                return None
+            # Write to a side file and move it into place only when complete:
+            # a download cut off midway must not be mistaken for the finished
+            # episode ("already downloaded") next time.
+            partial_path = download_path + ".part"
+            try:
+                with open(partial_path, "wb") as file:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        file.write(chunk)
+                os.replace(partial_path, download_path)
+            finally:
+                if os.path.exists(partial_path):
+                    os.remove(partial_path)
+            self.logger.info("Download complete.")
         return download_path
 
     def get_and_make_download_path(self, post_title: str) -> Path:
