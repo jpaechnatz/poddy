@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest import mock
 
 import pytest
+import requests
 
 from app.models import Post
 from podcast_processor.podcast_downloader import (
@@ -22,6 +24,7 @@ PROXY = "http://100.64.0.7:8888"
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DOWNLOAD_PROXY", raising=False)
     monkeypatch.delenv("DOWNLOAD_PROXY_HOSTS", raising=False)
+    monkeypatch.delenv("DOWNLOAD_PROXY_FALLBACK", raising=False)
 
 
 def test_no_proxy_by_default() -> None:
@@ -92,3 +95,94 @@ def test_download_uses_the_proxy_only_for_listed_hosts(
             dest_path=str(tmp_path / "b.mp3"),
         )
     assert "proxies" not in mock_get.call_args.kwargs
+
+
+def _status(code: int) -> Any:
+    response = _response()
+    response.status_code = code
+    return response
+
+
+def _download(app: Any, tmp_path: Any) -> tuple[PodcastDownloader, str | None]:
+    downloader = PodcastDownloader(download_dir=str(tmp_path))
+    with app.app_context():
+        result = downloader.download_episode(
+            Post(id=1, download_url=PATREON), dest_path=str(tmp_path / "a.mp3")
+        )
+    return downloader, result
+
+
+@pytest.mark.parametrize(
+    "proxy_error",
+    [
+        requests.exceptions.ProxyError("Cannot connect to proxy"),
+        requests.exceptions.ConnectTimeout("timed out"),
+    ],
+)
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_unreachable_proxy_falls_back_to_direct_download(
+    mock_get: Any,
+    proxy_error: Exception,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    app: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("DOWNLOAD_PROXY", PROXY)
+    mock_get.side_effect = [proxy_error, _response()]
+
+    with caplog.at_level(logging.WARNING):
+        downloader, result = _download(app, tmp_path)
+
+    assert result == str(tmp_path / "a.mp3")
+    assert (tmp_path / "a.mp3").read_bytes() == b"audio"
+    assert downloader.last_error is None
+    first, second = mock_get.call_args_list
+    assert first.kwargs["proxies"] == {"http": PROXY, "https": PROXY}
+    assert "proxies" not in second.kwargs
+    assert "downloading directly" in caplog.text
+
+
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_fallback_can_be_switched_off(
+    mock_get: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Any, app: Any
+) -> None:
+    monkeypatch.setenv("DOWNLOAD_PROXY", PROXY)
+    monkeypatch.setenv("DOWNLOAD_PROXY_FALLBACK", "none")
+    mock_get.side_effect = requests.exceptions.ProxyError("down")
+
+    downloader, result = _download(app, tmp_path)
+
+    assert result is None
+    assert mock_get.call_count == 1
+    assert downloader.last_error == f"DOWNLOAD_PROXY {PROXY} not reachable"
+
+
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_failed_direct_download_reports_both_reasons(
+    mock_get: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Any, app: Any
+) -> None:
+    monkeypatch.setenv("DOWNLOAD_PROXY", PROXY)
+    mock_get.side_effect = [requests.exceptions.ProxyError("down"), _status(403)]
+
+    downloader, result = _download(app, tmp_path)
+
+    assert result is None
+    assert downloader.last_error == (
+        f"DOWNLOAD_PROXY {PROXY} not reachable; direct download: HTTP 403"
+    )
+    assert not (tmp_path / "a.mp3").exists()
+
+
+@mock.patch("podcast_processor.podcast_downloader.requests.get")
+def test_http_error_through_the_proxy_is_not_retried_directly(
+    mock_get: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Any, app: Any
+) -> None:
+    monkeypatch.setenv("DOWNLOAD_PROXY", PROXY)
+    mock_get.return_value = _status(404)
+
+    downloader, result = _download(app, tmp_path)
+
+    assert result is None
+    assert mock_get.call_count == 1
+    assert downloader.last_error == "HTTP 404"
