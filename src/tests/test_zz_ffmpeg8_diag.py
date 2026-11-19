@@ -86,6 +86,31 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
                 + (e.stderr or b"").decode(errors="replace")[-800:].replace("\n", " | ")
             )
 
+    info = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-i",
+            str(src),
+            "-af",
+            "ashowinfo",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stderr
+    sizes = [
+        line.split("nb_samples:")[1].split()[0]
+        for line in info.splitlines()
+        if "nb_samples:" in line
+    ]
+    add(
+        f"FRAMES count={len(sizes)} first={sizes[:5]} max={max(sizes, key=int) if sizes else None}"
+    )
+
     polished = tmp_path / "polished.mp3"
     shutil.copy(src, polished)
     real_write = audio_polish.write_adjusted_chapters

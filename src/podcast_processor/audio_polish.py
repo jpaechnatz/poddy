@@ -166,11 +166,14 @@ def _apply_cuts(stream: Any, windows: list[tuple[float, float]]) -> Any:
     if not windows:
         return stream
     removed = "+".join(f"between(t,{start:.3f},{end:.3f})" for start, end in windows)
-    # Restamp from the sample count before selecting: with FFmpeg 8, aselect
-    # saw no usable frame timestamps, so t never fell inside a window and
-    # nothing was cut. A sample-based t works with every version.
+    # aselect keeps or drops whole frames. FFmpeg 8 can hand it frames far
+    # longer than a pause, so a frame starting outside every window kept the
+    # silence inside it and nothing was cut. Fixed 1024-sample frames
+    # (about 23 ms) and timestamps rebuilt from the sample count make the cut
+    # independent of how the decoder delivers audio.
     return (
-        stream.filter("asetpts", "N/SR/TB")
+        stream.filter("asetnsamples", n=1024, p=0)
+        .filter("asetpts", "N/SR/TB")
         .filter("aselect", f"not({removed})")
         .filter("asetpts", "N/SR/TB")
     )
