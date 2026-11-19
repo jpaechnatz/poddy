@@ -166,7 +166,14 @@ def _apply_cuts(stream: Any, windows: list[tuple[float, float]]) -> Any:
     if not windows:
         return stream
     removed = "+".join(f"between(t,{start:.3f},{end:.3f})" for start, end in windows)
-    return stream.filter("aselect", f"not({removed})").filter("asetpts", "N/SR/TB")
+    # Restamp from the sample count before selecting: with FFmpeg 8, aselect
+    # saw no usable frame timestamps, so t never fell inside a window and
+    # nothing was cut. A sample-based t works with every version.
+    return (
+        stream.filter("asetpts", "N/SR/TB")
+        .filter("aselect", f"not({removed})")
+        .filter("asetpts", "N/SR/TB")
+    )
 
 
 def _loudnorm_target() -> dict[str, object]:

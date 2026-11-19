@@ -58,6 +58,13 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
             "aselect", f"not(between(pts*TB,{windows[0][0]:.3f},{windows[0][1]:.3f}))"
         ).filter("asetpts", "N/SR/TB"),
         "atrim_first": lambda i: i.filter("atrim", end=windows[0][0]),
+        "asetpts_first": lambda i: (
+            i.filter("asetpts", "N/SR/TB")
+            .filter(
+                "aselect", f"not(between(t,{windows[0][0]:.3f},{windows[0][1]:.3f}))"
+            )
+            .filter("asetpts", "N/SR/TB")
+        ),
     }.items():
         out = tmp_path / f"{label}.mp3"
         stream = (
