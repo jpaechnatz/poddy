@@ -102,6 +102,101 @@ def test_trim_silence_shortens_pause_and_moves_chapters(tmp_path: Path) -> None:
     )
 
 
+def _render(path: Path, parts: list[tuple[str, float]]) -> Path:
+    """Mono MP3 made of ("tone"|"silence", seconds) parts."""
+    inputs: list[str] = []
+    for kind, seconds in parts:
+        source = (
+            f"sine=frequency=440:duration={seconds}"
+            if kind == "tone"
+            else f"anullsrc=r=44100:cl=mono:d={seconds}"
+        )
+        inputs += ["-f", "lavfi", "-i", source]
+    labels = "".join(f"[{i}]" for i in range(len(parts)))
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            *inputs,
+            "-filter_complex",
+            f"{labels}concat=n={len(parts)}:v=0:a=1,volume=-10dB",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def test_trim_silence_cuts_every_pause(tmp_path: Path) -> None:
+    path = _render(
+        tmp_path / "two_pauses.mp3",
+        [("tone", 3), ("silence", 4), ("tone", 3), ("silence", 5), ("tone", 3)],
+    )
+    write_chapters(
+        str(path),
+        [
+            Chapter("a", "Eins", 0, 3_000),
+            Chapter("b", "Zwei", 7_000, 10_000),
+            Chapter("c", "Drei", 15_000, 18_000),
+        ],
+    )
+
+    windows = polish_audio(str(path), PolishOptions(trim_silence=True))
+
+    assert len(windows) == 2
+    removed = [end - start for start, end in windows]
+    assert removed == [pytest.approx(3.4, abs=0.2), pytest.approx(4.4, abs=0.2)]
+    duration_ms = get_audio_duration_ms(str(path))
+    assert duration_ms is not None
+    assert duration_ms / 1000 == pytest.approx(18.0 - sum(removed), abs=0.3)
+    starts = [c.start_time_ms / 1000 for c in read_chapters(str(path))]
+    assert starts == [
+        0,
+        pytest.approx(7.0 - removed[0], abs=0.05),
+        pytest.approx(15.0 - sum(removed), abs=0.05),
+    ]
+
+
+def test_trim_silence_cuts_pause_running_to_the_end(tmp_path: Path) -> None:
+    path = _render(tmp_path / "tail.mp3", [("tone", 5), ("silence", 4)])
+
+    windows = polish_audio(str(path), PolishOptions(trim_silence=True))
+
+    assert len(windows) == 1
+    start, end = windows[0]
+    assert start == pytest.approx(5.3, abs=0.2)
+    duration_ms = get_audio_duration_ms(str(path))
+    assert duration_ms is not None
+    assert duration_ms / 1000 == pytest.approx(9.0 - (end - start), abs=0.3)
+
+
+def test_audio_that_was_not_cut_is_not_reported_as_cut(tmp_path: Path) -> None:
+    from podcast_processor import audio_polish
+
+    path = _tone_silence_tone(tmp_path)
+    before = path.read_bytes()
+
+    # Simulates an FFmpeg build whose cut silently keeps every sample, as
+    # aselect did on Ubuntu's FFmpeg 8.0.1.
+    with mock.patch.object(
+        audio_polish,
+        "_cut_filtergraph",
+        side_effect=lambda windows, chain: f"[0:a]{chain}[out]",
+    ):
+        windows = polish_audio(str(path), PolishOptions(trim_silence=True))
+
+    # Chapters and transcripts must not move for audio that did not change.
+    assert windows == []
+    assert path.read_bytes() == before
+    assert read_chapters(str(path))[1].start_time_ms == 11_000
+
+
 def test_normalize_loudness_reaches_podcast_target(tmp_path: Path) -> None:
     path = _tone_silence_tone(tmp_path, volume_db=-30.0)
     assert _integrated_loudness(path) < -30
