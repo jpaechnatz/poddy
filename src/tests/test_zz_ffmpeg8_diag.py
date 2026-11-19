@@ -31,6 +31,7 @@ def _probe(path: Path) -> str:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     return out.stdout.replace("\n", " ") + out.stderr[-300:]
 
@@ -40,7 +41,7 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
     add = report.append
     add(
         subprocess.run(
-            ["ffmpeg", "-version"], capture_output=True, text=True
+            ["ffmpeg", "-version"], capture_output=True, text=True, check=False
         ).stdout.splitlines()[0]
     )
     src = _tone_silence_tone(tmp_path)
@@ -83,17 +84,17 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
     real_write = audio_polish.write_adjusted_chapters
     seen: dict[str, str] = {}
 
-    def spy(path, chapters, windows_):  # type: ignore[no-untyped-def]
+    def spy(path, chapters, windows_):
         seen["before_chapters"] = _probe(Path(path))
         return real_write(path, chapters, windows_)
 
-    audio_polish.write_adjusted_chapters = spy  # type: ignore[assignment]
+    audio_polish.write_adjusted_chapters = spy
     try:
         result = audio_polish.polish_audio(
             str(polished), PolishOptions(trim_silence=True)
         )
     finally:
-        audio_polish.write_adjusted_chapters = real_write  # type: ignore[assignment]
+        audio_polish.write_adjusted_chapters = real_write
     add(f"POLISH result={result}")
     add("POLISH before chapter rewrite " + seen.get("before_chapters", "n/a"))
     add("POLISH final " + _probe(polished))
