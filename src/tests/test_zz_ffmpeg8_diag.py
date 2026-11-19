@@ -111,6 +111,45 @@ def test_ffmpeg8_diagnostics(tmp_path: Path) -> None:
         f"FRAMES count={len(sizes)} first={sizes[:5]} max={max(sizes, key=int) if sizes else None}"
     )
 
+    for label, args in {
+        "cli_af_quoted": ["-af", "aselect='not(between(t,5.3,10.7))',asetpts=N/SR/TB"],
+        "cli_fc_escaped": [
+            "-filter_complex",
+            "[0:a]aselect=not(between(t\\,5.3\\,10.7)),asetpts=N/SR/TB[a]",
+            "-map",
+            "[a]",
+        ],
+    }.items():
+        out = tmp_path / f"{label}.mp3"
+        run = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-v",
+                "debug",
+                "-y",
+                "-i",
+                str(src),
+                *args,
+                str(out),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        decisions = [
+            line.strip()[-120:] for line in run.stderr.splitlines() if "select:" in line
+        ]
+        parsed = [
+            line.strip()[-160:]
+            for line in run.stderr.splitlines()
+            if "aselect" in line and ("args" in line or "Setting" in line)
+        ]
+        add(
+            f"{label} rc={run.returncode} decisions={len(decisions)} sample={decisions[200:203]} parsed={parsed[:3]}"
+        )
+        add(f"{label} RESULT " + _probe(out)[:260])
+
     polished = tmp_path / "polished.mp3"
     shutil.copy(src, polished)
     real_write = audio_polish.write_adjusted_chapters
