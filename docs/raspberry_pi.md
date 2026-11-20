@@ -182,29 +182,42 @@ Spots, wenn der Server als französisch gilt; die erkennt Poddy bei deutscher
 Transkription nicht. In beiden Fällen lädt Poddy die Folgen über einen kleinen
 Proxy auf dem Pi zu Hause.
 
-Auf dem **Pi** (muss im selben Tailnet sein):
+Pi und Server müssen sich über ein VPN erreichen. Die Anleitung nutzt
+NetBird; mit Tailscale geht es genauso (siehe unten).
+
+Auf dem **Server** die eigene NetBird-IP ermitteln:
+
+```bash
+ip -4 -br addr show wt0     # z. B. 10.147.8.198/16
+```
+
+Auf dem **Pi** tinyproxy einrichten und nur diese IP zulassen:
 
 ```bash
 sudo apt install tinyproxy
-echo "Allow 100.64.0.0/10" | sudo tee -a /etc/tinyproxy/tinyproxy.conf
+echo "Allow 10.147.8.198" | sudo tee -a /etc/tinyproxy/tinyproxy.conf
 sudo systemctl restart tinyproxy
-tailscale ip -4            # z. B. 100.101.102.103
+ip -4 -br addr show wt0     # NetBird-IP des Pi, z. B. 10.147.28.97/16
 ```
 
-`Allow 100.64.0.0/10` lässt nur Geräte aus dem Tailnet zu. Port ist
-standardmäßig `8888`.
+`Allow` mit der IP des Servers lässt nur Poddy an den Proxy, keine anderen
+Geräte im NetBird-Netz. Der Port ist standardmäßig `8888`. tinyproxy schreibt
+sein Log ins Journal (`sudo journalctl -u tinyproxy`). Wer die
+Standard-Richtlinie in NetBird eingeschränkt hat, muss den Server zum Pi auf
+TCP 8888 freigeben.
 
-Auf dem **Server** in `.env.local`:
+Auf dem **Server** in `.env.local` die IP des Pi eintragen (IP statt Namen):
 
 ```ini
-DOWNLOAD_PROXY=http://100.101.102.103:8888
+DOWNLOAD_PROXY=http://10.147.28.97:8888
 DOWNLOAD_PROXY_HOSTS=patreon.com,patreonusercontent.com
 ```
 
-Danach `docker compose -f compose.pi.yml up -d`. Test aus dem Container:
+Danach `docker compose -f compose.pi.yml up -d`. Test aus dem Container, er
+liest die Adresse aus `.env.local`:
 
 ```bash
-docker exec podly-pure-podcasts python3 -c "import requests; print(requests.get('https://api.ipify.org', proxies={'https': 'http://100.101.102.103:8888'}, timeout=15).text)"
+docker exec podly-pure-podcasts python3 -c "import os, requests; print(requests.get('https://api.ipify.org', proxies={'https': os.environ['DOWNLOAD_PROXY']}, timeout=15).text)"
 ```
 
 Es muss die IP deines Heimanschlusses erscheinen. Alle anderen Podcasts laden
@@ -214,15 +227,39 @@ Gegen standortabhängige Werbung `DOWNLOAD_PROXY_HOSTS` weglassen, dann laufen
 alle Folgen-Downloads über den Pi. Welches Land die Hoster sehen, zeigt:
 
 ```bash
-docker exec podly-pure-podcasts python3 -c "import requests; print(requests.get('https://ipinfo.io/country', timeout=15).text, requests.get('https://ipinfo.io/country', proxies={'https': 'http://100.101.102.103:8888'}, timeout=15).text)"
+docker exec podly-pure-podcasts python3 -c "import os, requests; p=os.environ['DOWNLOAD_PROXY']; print(requests.get('https://ipinfo.io/country', timeout=15).text.strip(), requests.get('https://ipinfo.io/country', proxies={'https': p}, timeout=15).text.strip())"
 ```
 
-Erst direkt, dann über den Pi; erwartet z. B. `FR` und `DE`.
+Erst direkt, dann über den Pi; erwartet z. B. `FR DE`.
 
-Ist der Pi nicht erreichbar, lädt Poddy die Folge direkt und schreibt eine
-Warnung ins Log (dann eventuell mit der Werbung für den Server-Standort).
-`DOWNLOAD_PROXY_FALLBACK=none` lässt den Download stattdessen scheitern, etwa
-wenn ein Anbieter den Server ohnehin sperrt.
+Ist der Proxy nicht nutzbar, lädt Poddy die Folge direkt (dann eventuell mit
+Werbung für den Server-Standort) und schreibt eine Warnung mit der Ursache ins
+Log, z. B. `DOWNLOAD_PROXY http://10.147.28.97:8888 failed: connection timed
+out; downloading directly instead`. `DOWNLOAD_PROXY_FALLBACK=none` lässt den
+Download stattdessen scheitern, etwa wenn ein Anbieter den Server ohnehin
+sperrt.
+
+| Ursache im Log | Bedeutung |
+| --- | --- |
+| `connection timed out` | Pi aus, VPN weg oder falsche IP (z. B. noch eine alte Tailscale-IP) |
+| `connection refused` | Pi erreichbar, aber tinyproxy läuft nicht oder lauscht auf einem anderen Port |
+| `proxy answered HTTP 403` | tinyproxy lehnt ab: die IP des Servers fehlt in `Allow` |
+| `proxy host name not resolvable` | Name in `DOWNLOAD_PROXY` unbekannt; die IP eintragen |
+| `no route to the proxy host` | keine Route zum Pi; VPN auf dem Server prüfen |
+
+### Tailscale und NetBird auf demselben Server
+
+Läuft auf dem Server zusätzlich Tailscale (z. B. für Funnel), verwirft dessen
+Firewall Pakete mit Absender aus `100.64.0.0/10`, die nicht über Tailscale
+kommen. NetBird nutzt standardmäßig denselben Bereich, dann kommen die
+Antworten des Pi nie an (`connection timed out`). Abhilfe: in den
+NetBird-Einstellungen (Network Settings) einen eigenen Bereich wählen, z. B.
+`10.147.0.0/16`.
+
+### Mit Tailscale statt NetBird
+
+Gleiche Schritte, die IPs von Server und Pi zeigt dort jeweils
+`tailscale ip -4`; der Server muss im selben Tailnet sein wie der Pi.
 
 ## Ohne Tailscale
 

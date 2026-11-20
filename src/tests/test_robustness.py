@@ -121,7 +121,9 @@ def test_proxy_down_gives_short_reason_without_url(
     monkeypatch.delenv("DOWNLOAD_PROXY_HOSTS", raising=False)
     monkeypatch.setenv("DOWNLOAD_PROXY_FALLBACK", "none")
     mock_get.side_effect = requests.exceptions.ProxyError(
-        f"HTTPSConnectionPool: Max retries exceeded with url: {SIGNED}"
+        f"HTTPSConnectionPool: Max retries exceeded with url: {SIGNED} "
+        "(Caused by ProxyError('Unable to connect to proxy', NewConnectionError("
+        "'Failed to establish a new connection: [Errno 111] Connection refused')))"
     )
     with app.app_context(), caplog.at_level(logging.INFO):
         result = downloader.download_episode(
@@ -129,7 +131,7 @@ def test_proxy_down_gives_short_reason_without_url(
         )
     assert result is None
     assert downloader.last_error == (
-        "DOWNLOAD_PROXY http://***@100.96.132.65:8888 not reachable"
+        "DOWNLOAD_PROXY http://***@100.96.132.65:8888 failed: connection refused"
     )
     assert "SECRET" not in caplog.text and "TOKEN" not in caplog.text
 
