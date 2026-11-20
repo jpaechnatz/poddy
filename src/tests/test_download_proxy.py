@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import socket
+import threading
+from collections.abc import Iterator
 from typing import Any
 from unittest import mock
 
@@ -14,6 +17,7 @@ from podcast_processor.podcast_downloader import (
     PodcastDownloader,
     _redact_proxy,
     download_proxies,
+    proxy_failure_reason,
 )
 
 PATREON = "https://www.patreon.com/api/rss/u/x/e/1.mp3?sig=abc"
@@ -155,7 +159,7 @@ def test_fallback_can_be_switched_off(
 
     assert result is None
     assert mock_get.call_count == 1
-    assert downloader.last_error == f"DOWNLOAD_PROXY {PROXY} not reachable"
+    assert downloader.last_error == f"DOWNLOAD_PROXY {PROXY} failed: ProxyError"
 
 
 @mock.patch("podcast_processor.podcast_downloader.requests.get")
@@ -169,7 +173,7 @@ def test_failed_direct_download_reports_both_reasons(
 
     assert result is None
     assert downloader.last_error == (
-        f"DOWNLOAD_PROXY {PROXY} not reachable; direct download: HTTP 403"
+        f"DOWNLOAD_PROXY {PROXY} failed: ProxyError; direct download: HTTP 403"
     )
     assert not (tmp_path / "a.mp3").exists()
 
@@ -186,3 +190,99 @@ def test_http_error_through_the_proxy_is_not_retried_directly(
     assert result is None
     assert mock_get.call_count == 1
     assert downloader.last_error == "HTTP 404"
+
+
+# Exception texts as requests 2.33 / urllib3 2.x raise them; each names the
+# full episode URL, which must never reach the log.
+_URL = "HTTPSConnectionPool(host='example.com', port=443): Max retries exceeded with url: /e.mp3?token=SECRET"
+
+
+@pytest.mark.parametrize(
+    ("exc", "reason"),
+    [
+        (
+            requests.exceptions.ProxyError(
+                f"{_URL} (Caused by ProxyError('Unable to connect to proxy', "
+                "ConnectTimeoutError(<HTTPSConnection(host='10.147.28.97', port=8888)>, "
+                "'Connection to 10.147.28.97 timed out. (connect timeout=60)')))"
+            ),
+            "connection timed out",
+        ),
+        (
+            requests.exceptions.ProxyError(
+                f"{_URL} (Caused by ProxyError('Unable to connect to proxy', "
+                "NewConnectionError(\"HTTPSConnection(host='10.147.28.97', port=8888): "
+                'Failed to establish a new connection: [Errno 111] Connection refused")))'
+            ),
+            "connection refused",
+        ),
+        (
+            requests.exceptions.ProxyError(
+                f"{_URL} (Caused by ProxyError('Unable to connect to proxy', "
+                "OSError('Tunnel connection failed: 403 Access denied')))"
+            ),
+            "proxy answered HTTP 403",
+        ),
+        (
+            requests.exceptions.ProxyError(
+                f"{_URL} (Caused by ProxyError('Unable to connect to proxy', "
+                "NameResolutionError(\"HTTPSConnection(host='pi.invalid', port=8888): "
+                "Failed to resolve 'pi.invalid' ([Errno -2] Name or service not known)\")))"
+            ),
+            "proxy host name not resolvable",
+        ),
+        (
+            requests.exceptions.ProxyError(
+                f"{_URL} (Caused by ProxyError('Unable to connect to proxy', "
+                "NewConnectionError(\"HTTPSConnection(host='10.147.28.97', port=8888): "
+                'Failed to establish a new connection: [Errno 113] No route to host")))'
+            ),
+            "no route to the proxy host",
+        ),
+        (requests.exceptions.ConnectTimeout("timed out"), "connection timed out"),
+        (requests.exceptions.ProxyError("Cannot connect to proxy"), "ProxyError"),
+    ],
+)
+def test_proxy_failure_reason_names_the_cause_without_the_url(
+    exc: requests.RequestException, reason: str
+) -> None:
+    assert proxy_failure_reason(exc) == reason
+
+
+@pytest.fixture
+def denying_proxy() -> Iterator[str]:
+    """A local proxy that answers every CONNECT like tinyproxy's Allow list."""
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(5)
+
+    def serve() -> None:
+        while True:
+            try:
+                client, _ = server.accept()
+            except OSError:
+                return
+            with client:
+                client.recv(4096)
+                client.sendall(b"HTTP/1.0 403 Access denied\r\n\r\n")
+
+    threading.Thread(target=serve, daemon=True).start()
+    yield f"http://127.0.0.1:{server.getsockname()[1]}"
+    server.close()
+
+
+def test_denied_proxy_is_reported_with_its_http_status(
+    denying_proxy: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Any, app: Any
+) -> None:
+    # Real requests/urllib3 against a real socket, so a changed error text in
+    # a library update shows up here instead of as a bare "ProxyError".
+    monkeypatch.setenv("DOWNLOAD_PROXY", denying_proxy)
+    monkeypatch.setenv("DOWNLOAD_PROXY_FALLBACK", "none")
+
+    downloader, result = _download(app, tmp_path)
+
+    assert result is None
+    assert downloader.last_error == (
+        f"DOWNLOAD_PROXY {denying_proxy} failed: proxy answered HTTP 403"
+    )
+    assert "sig=abc" not in (downloader.last_error or "")

@@ -31,12 +31,44 @@ def _redact_proxy(proxy: str) -> str:
     return proxy
 
 
+# Why DOWNLOAD_PROXY failed, read from the exception text. urllib3 reports
+# every proxy failure, a timeout included, as ProxyError, so the class alone
+# says nothing. The text also names the full episode URL (private feeds carry
+# tokens there), so only the matched reason is ever logged.
+_PROXY_FAILURES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"Tunnel connection failed: (\d{3})"), "proxy answered HTTP {0}"),
+    (re.compile(r"timed out"), "connection timed out"),
+    (re.compile(r"Connection refused"), "connection refused"),
+    (
+        re.compile(r"Failed to resolve|Name or service not known"),
+        "proxy host name not resolvable",
+    ),
+    (
+        re.compile(r"No route to host|Network is unreachable"),
+        "no route to the proxy host",
+    ),
+)
+
+
+def proxy_failure_reason(exc: requests.RequestException) -> str:
+    """Short, URL-free reason for a failed connection through DOWNLOAD_PROXY."""
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return "connection timed out"
+    text = str(exc)
+    for pattern, reason in _PROXY_FAILURES:
+        match = pattern.search(text)
+        if match:
+            return reason.format(*match.groups())
+    return type(exc).__name__
+
+
 def download_proxies(url: str) -> dict[str, str] | None:
     """Proxy for an episode download, from DOWNLOAD_PROXY / DOWNLOAD_PROXY_HOSTS.
 
     Some hosts (e.g. Patreon behind Cloudflare) refuse downloads from data
     centre IPs. DOWNLOAD_PROXY (http:// or https://) routes episode downloads
-    through another connection, such as a proxy at home reached via Tailscale.
+    through another connection, such as a proxy at home reached over a VPN
+    (NetBird, Tailscale).
     DOWNLOAD_PROXY_HOSTS limits it to these domains and their subdomains
     (comma-separated); empty means every download. Feeds and API calls never
     use it.
@@ -159,7 +191,8 @@ class PodcastDownloader:
                 self.logger.warning("Download failed: %s", self.last_error)
                 return None
             return self._download_without_proxy(
-                f"DOWNLOAD_PROXY {_redact_proxy(proxies['https'])} not reachable",
+                f"DOWNLOAD_PROXY {_redact_proxy(proxies['https'])} failed: "
+                f"{proxy_failure_reason(exc)}",
                 audio_link,
                 headers,
                 download_path,
