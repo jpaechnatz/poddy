@@ -6,7 +6,7 @@
 export const ATTEMPTS_COLUMN_LABEL = 'Attempts';
 
 export const ATTEMPTS_COLUMN_TITLE =
-  "Podly's attempts at this call, including the first one (1 = succeeded first time). " +
+  "Poddy's attempts at this call, including the first one (1 = succeeded first time). " +
   'Retries inside the provider client are not counted.';
 
 const NOT_TRACKED_TITLE = 'No attempt count is recorded for this call';
