@@ -14,6 +14,7 @@ from podcast_processor.llm_model_call_utils import (
     try_update_model_call,
     try_upsert_model_call,
 )
+from shared import model_call_types
 from shared.llm_utils import model_uses_max_completion_tokens
 
 logger = logging.getLogger("global_logger")
@@ -125,6 +126,7 @@ def _complete(
         last_seq_num=seq,
         model_name=model,
         prompt=prompt,
+        call_type=model_call_types.SUMMARY,
         logger=logger,
         log_prefix="Summary",
     )

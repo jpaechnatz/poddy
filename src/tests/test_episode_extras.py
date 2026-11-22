@@ -17,6 +17,7 @@ from podcast_processor.episode_extras import (
     summarize_transcript,
 )
 from podcast_processor.podcast_processor import PodcastProcessor
+from shared import model_call_types
 
 
 def _seg(start: float, end: float, text: str) -> SimpleNamespace:
@@ -72,6 +73,35 @@ def test_summary_single_request_in_feed_language() -> None:
     prompt = completion.call_args.kwargs["messages"][1]["content"]
     assert "in German" in prompt
     assert "Satz 3 über den Amiga 500." in prompt
+
+
+def test_summary_model_call_is_labelled_summary() -> None:
+    # Its own call type keeps summary rows apart from ad classification rows
+    # in the ModelCall key, the unique index and the cost dashboard.
+    segments = [_seg(i, i + 1, f"Satz {i} über den Amiga 500.") for i in range(20)]
+    with (
+        mock.patch(
+            "podcast_processor.episode_extras.litellm.completion",
+            return_value=_response("Überblick."),
+        ),
+        mock.patch(
+            "podcast_processor.episode_extras.try_upsert_model_call",
+            return_value=None,
+        ) as upsert,
+    ):
+        summary = summarize_transcript(
+            segments,
+            [],
+            language="de",
+            post_id=7,
+            **LLM,  # type: ignore[arg-type]
+        )
+
+    assert summary == "Überblick."
+    kwargs = upsert.call_args.kwargs
+    assert kwargs["call_type"] == model_call_types.SUMMARY
+    assert kwargs["post_id"] == 7
+    assert (kwargs["first_seq_num"], kwargs["last_seq_num"]) == (-300, -300)
 
 
 def test_long_transcript_is_summarized_in_parts() -> None:
