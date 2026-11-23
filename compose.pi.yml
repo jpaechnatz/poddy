@@ -50,7 +50,10 @@ networks:
     # Fixed subnet so the gateway (the peer Podly sees for requests forwarded
     # by tailscale serve/funnel or another proxy on the host) is predictable:
     # set PODLY_TRUSTED_PROXY=172.30.42.1 in .env.local. Change both if the
-    # subnet collides with your network.
+    # subnet collides with your network. Behind several proxies at once (e.g.
+    # tailscale funnel plus a NetBird reverse proxy whose address can change)
+    # use PODLY_TRUSTED_PROXY=* instead; only X-Forwarded-Proto is trusted, and
+    # the port must then never be published publicly (see PODDY_BIND_ADDRESS).
     ipam:
       config:
         - subnet: 172.30.42.0/24

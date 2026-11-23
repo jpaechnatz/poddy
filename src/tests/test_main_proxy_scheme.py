@@ -108,8 +108,46 @@ def test_trusted_proxy_logs_untrusted_headers(serve_kwargs):
 
 @pytest.mark.parametrize(
     "setting",
-    ["*", "172.20.0.0/16", "127.0.0.1,::1", "localhost", "::1", "::ffff:172.20.0.1"],
+    ["172.20.0.0/16", "127.0.0.1,::1", "localhost", "::1", "::ffff:172.20.0.1"],
 )
 def test_invalid_proxy_trust_is_rejected(serve_kwargs, setting):
-    with pytest.raises(ValueError, match="PODLY_TRUSTED_PROXY must be the IPv4"):
+    with pytest.raises(
+        ValueError,
+        match=r"PODLY_TRUSTED_PROXY must be '\*' or the IPv4 address",
+    ):
         serve_kwargs(setting)
+
+
+def test_wildcard_trusts_any_peer_for_forwarded_proto_only(serve_kwargs):
+    kwargs = serve_kwargs("*")
+
+    assert kwargs["trusted_proxy"] == "*"
+    assert kwargs["trusted_proxy_headers"] == {"x-forwarded-proto"}
+    assert kwargs["log_untrusted_proxy_headers"] is True
+
+
+@pytest.mark.parametrize("setting", ["foo", "10.0.0.0/8", "**", "*,172.30.42.1"])
+def test_wildcard_is_the_only_non_address_value(serve_kwargs, setting):
+    with pytest.raises(ValueError, match="PODLY_TRUSTED_PROXY must be"):
+        serve_kwargs(setting)
+
+
+@pytest.mark.parametrize("peer", ["172.30.42.1", "10.147.8.198"])
+def test_wildcard_generates_https_feed_urls_from_every_proxy(proxy_client, peer):
+    # Tailscale Funnel arrives via the Docker gateway, the NetBird reverse
+    # proxy with an address from its network that can change.
+    body = _get_feed(proxy_client("*"), peer, **{"X-Forwarded-Proto": "https"})
+    assert body == {"base_url": "https://localhost", "peer": peer}
+
+
+def test_wildcard_still_ignores_forwarded_address_and_host(proxy_client):
+    body = _get_feed(
+        proxy_client("*"),
+        "10.147.8.198",
+        **{
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-For": "203.0.113.9",
+            "X-Forwarded-Host": "attacker.example",
+        },
+    )
+    assert body == {"base_url": "https://localhost", "peer": "10.147.8.198"}

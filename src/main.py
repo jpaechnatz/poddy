@@ -19,13 +19,22 @@ def main() -> None:
 
     # Waitress string-matches one immediate peer, so the value must be in the
     # canonical form REMOTE_ADDR takes. The server binds IPv4 only.
+    #
+    # "*" trusts every peer. That is meant for running behind several proxies
+    # at once (e.g. Tailscale Funnel via the Docker gateway plus a NetBird
+    # reverse proxy whose address can change), and is acceptable only because
+    # the port must never be reachable publicly and just x-forwarded-proto is
+    # trusted below: a peer can at most switch feed links between http and
+    # https. X-Forwarded-For stays untrusted, so rate limits keep the socket
+    # address.
     trusted_proxy = os.environ.get("PODLY_TRUSTED_PROXY", "").strip() or None
-    if trusted_proxy is not None:
+    if trusted_proxy is not None and trusted_proxy != "*":
         try:
             trusted_proxy = str(IPv4Address(trusted_proxy))
         except ValueError as exc:
             raise ValueError(
-                "PODLY_TRUSTED_PROXY must be the IPv4 address of the immediate proxy peer"
+                "PODLY_TRUSTED_PROXY must be '*' or the IPv4 address of the "
+                "immediate proxy peer"
             ) from exc
 
     port = os.environ.get("PORT", 5001)
