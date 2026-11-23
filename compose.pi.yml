@@ -22,6 +22,13 @@ services:
       # only on the host: put PODDY_BIND_ADDRESS=127.0.0.1 into a file named
       # ".env" next to this file (docker compose reads it automatically).
       - "${PODDY_BIND_ADDRESS:-0.0.0.0}:5001:5001"
+      # Optional second address, e.g. the server's NetBird/VPN IP for a reverse
+      # proxy that connects over the VPN: put PODDY_BIND_ADDRESS_2=10.147.8.198
+      # into the same ".env". Only together with PODDY_BIND_ADDRESS=127.0.0.1,
+      # because 0.0.0.0 already covers every address. Unset, this entry repeats
+      # the one above and Compose drops the duplicate. The address must exist
+      # when the container starts, i.e. the VPN must be up.
+      - "${PODDY_BIND_ADDRESS_2:-${PODDY_BIND_ADDRESS:-0.0.0.0}}:5001:5001"
     volumes:
       - ./src/instance:/app/src/instance
     env_file:

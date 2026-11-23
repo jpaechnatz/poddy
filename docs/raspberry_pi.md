@@ -84,6 +84,10 @@ Was die Zeilen bewirken:
   übernimmt. Ohne diese Zeile stehen im Feed `http://…`-Links.
 - `PODDY_BIND_ADDRESS=127.0.0.1` verhindert, dass jemand im Heimnetz Poddy
   direkt über die Proxy-Adresse anspricht.
+- Greift zusätzlich ein Reverse Proxy über ein VPN zu (z. B. NetBird), kommt
+  dessen Server-IP als zweite Adresse in dieselbe `.env`
+  (`PODDY_BIND_ADDRESS_2=10.147.8.198`) und in `.env.local`
+  `PODLY_TRUSTED_PROXY=*`, weil die Anfragen dann von zwei Proxys kommen.
 
 Die Datenbank (`src/instance/sqlite3.db`) legt Poddy beim ersten Start selbst
 an und bringt sie bei jedem Start per Migration auf den aktuellen Stand.
