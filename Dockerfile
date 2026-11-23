@@ -133,7 +133,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src/ ./src/
 RUN rm -rf ./src/instance
 COPY scripts/ ./scripts/
-RUN chmod +x scripts/start_services.sh
+# COPY keeps the file modes of the build context. A checkout made under a
+# strict umask (e.g. 0077) holds files only their owner can read; in the image
+# that owner is root, and appuser then fails on "Permission denied" for
+# src/main.py, which ends in a restart loop. Make the code readable for all.
+RUN chmod -R a+rX ./src ./scripts && chmod +x scripts/start_services.sh
 
 # Copy built frontend assets to Flask static folder
 COPY --from=frontend-build /app/dist ./src/app/static
