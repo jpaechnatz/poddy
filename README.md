@@ -24,7 +24,9 @@ heißen weiterhin „podly“, damit bestehende Installationen kompatibel bleibe
 - **Kapitel bleiben korrekt:** Kapitelmarken, Kapitelbilder und Links wandern
   mit, wenn Werbung oder Pausen herausgeschnitten werden; Cover und andere
   ID3-Tags bleiben erhalten.
-- **Folgen ausschließen:** Titel-Filter pro Feed, z. B. `Stammtisch`.
+- **Folgen ausschließen:** Titel-Filter pro Feed, z. B. `Stammtisch` oder mit
+  Platzhalter `Trailer*` (beginnt mit). Passende Folgen werden nicht automatisch
+  freigegeben; eine von Hand freigegebene Folge erscheint trotzdem im Feed.
 - **Audio aufbereiten:** lange Pausen kürzen und Lautheit auf −16 LUFS
   normalisieren (pro Feed).
 - **Transkripte im Feed:** `podcast:transcript` (WebVTT und SRT) passend zur

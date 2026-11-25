@@ -51,10 +51,10 @@ export default function FeedSettingsModal({
         ? 'off'
         : 'inherit'
   );
-  const [languageOverride, setLanguageOverride] = useState(feed.language ?? '');
-  const [excludeStrings, setExcludeStrings] = useState(
+  const [titleExcludeStrings, setTitleExcludeStrings] = useState(
     feed.episode_title_exclude_strings ?? ''
   );
+  const [languageOverride, setLanguageOverride] = useState(feed.language ?? '');
   const [trimSilence, setTrimSilence] = useState(feed.trim_silence === true);
   const [normalizeLoudness, setNormalizeLoudness] = useState(
     feed.normalize_loudness === true
@@ -86,8 +86,8 @@ export default function FeedSettingsModal({
           ? 'off'
           : 'inherit'
     );
+    setTitleExcludeStrings(feed.episode_title_exclude_strings ?? '');
     setLanguageOverride(feed.language ?? '');
-    setExcludeStrings(feed.episode_title_exclude_strings ?? '');
     setTrimSilence(feed.trim_silence === true);
     setNormalizeLoudness(feed.normalize_loudness === true);
     setAlwaysTranscribe(feed.always_transcribe === true);
@@ -118,8 +118,8 @@ export default function FeedSettingsModal({
       : feed.auto_whitelist_new_episodes_override === false
         ? 'off'
         : 'inherit';
+  const currentTitleExcludeStrings = feed.episode_title_exclude_strings ?? '';
   const currentLanguageOverride = feed.language ?? '';
-  const currentExcludeStrings = feed.episode_title_exclude_strings ?? '';
 
   const handleSave = () => {
     const settings: FeedSettingsUpdate = {};
@@ -147,12 +147,12 @@ export default function FeedSettingsModal({
         autoWhitelistOverride === 'inherit' ? null : autoWhitelistOverride === 'on';
     }
 
-    if (languageOverride !== currentLanguageOverride) {
-      settings.language = languageOverride === '' ? null : languageOverride;
+    if (titleExcludeStrings.trim() !== currentTitleExcludeStrings) {
+      settings.episode_title_exclude_strings = titleExcludeStrings.trim() || null;
     }
 
-    if (excludeStrings.trim() !== currentExcludeStrings) {
-      settings.episode_title_exclude_strings = excludeStrings.trim() || null;
+    if (languageOverride !== currentLanguageOverride) {
+      settings.language = languageOverride === '' ? null : languageOverride;
     }
 
     if (trimSilence !== (feed.trim_silence === true)) {
@@ -267,24 +267,6 @@ export default function FeedSettingsModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Exclude episodes by title
-            </label>
-            <input
-              type="text"
-              value={excludeStrings}
-              onChange={(e) => setExcludeStrings(e.target.value)}
-              placeholder="e.g. Stammtisch,Preview"
-              className="w-full rounded-lg border border-gray-300 bg-surface px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Comma-separated list. Episodes whose title contains any of these
-              (case-insensitive) are never auto-whitelisted and are left out of
-              the Poddy RSS feed.
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
               Transcription language
             </label>
             <select
@@ -324,6 +306,25 @@ export default function FeedSettingsModal({
             <p className="text-xs text-gray-500 mt-1">
               Overrides the global setting for this feed.
             </p>
+            <div className="mt-3 ml-3 pl-3 border-l-2 border-gray-200">
+              <label className="block text-xs text-gray-600 mb-1">
+                Skip episodes whose title contains
+              </label>
+              <textarea
+                value={titleExcludeStrings}
+                onChange={(e) => setTitleExcludeStrings(e.target.value)}
+                placeholder="bonus,trailer*,*(rerun)"
+                rows={2}
+                className="w-full rounded-lg border border-gray-300 bg-surface px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Comma-separated, case-insensitive. A phrase matches anywhere in
+                the title; use * as a wildcard to match the whole title
+                (trailer* = starts with, *rerun = ends with). Matching new
+                episodes are never auto-whitelisted and are left out of the
+                Poddy feed. You can still whitelist one by hand.
+              </p>
+            </div>
           </div>
 
           <div>

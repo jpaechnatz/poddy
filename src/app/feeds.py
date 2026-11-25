@@ -18,7 +18,7 @@ import PyRSS2Gen
 from flask import current_app, g, request
 
 from app.chapters_json import CHAPTERS_MIME_TYPE, processed_chapters
-from app.episode_filter import is_post_excluded, is_title_excluded
+from app.episode_filters import is_title_excluded
 from app.extensions import db
 from app.guid_urls import post_chapters_path, post_stream_path, post_transcript_path
 from app.models import Feed, Post, User, UserFeed
@@ -452,7 +452,9 @@ def _should_whitelist_new_post(
     feed: Feed, post: Post, floor_date: datetime.date | None
 ) -> bool:
     if is_title_excluded(feed, post.title):
-        logger.info("not whitelisting post excluded by title filter: %s", post.title)
+        logger.debug(
+            "skipping post whose title matches a feed exclusion: %s", post.title
+        )
         return False
     if floor_date is not None and post.release_date is None:
         logger.debug(
@@ -960,7 +962,14 @@ def generate_feed_xml(feed: Feed) -> Any:
     include_unprocessed = getattr(config, "autoprocess_on_download", True)
 
     if include_unprocessed:
-        posts = list(cast(Iterable[Post], feed.posts))
+        # Episodes excluded by title stay out of the feed so a podcast app
+        # cannot trigger processing by downloading them, unless the user
+        # whitelisted them by hand.
+        posts = [
+            post
+            for post in cast(Iterable[Post], feed.posts)
+            if post.whitelisted or not is_title_excluded(feed, post.title)
+        ]
     else:
         posts = (
             Post.query.filter(
@@ -972,7 +981,6 @@ def generate_feed_xml(feed: Feed) -> Any:
             .all()
         )
 
-    posts = [post for post in posts if not is_title_excluded(feed, post.title)]
     with_transcripts = post_ids_with_transcripts(
         [post.id for post in posts if transcript_ready(post)]
     )
@@ -1008,9 +1016,7 @@ def generate_aggregate_feed_xml(user: User | None) -> Any:
     user_id = user.id if user else 0
     logger.info(f"Generating aggregate feed XML for: {username}")
 
-    posts = [
-        post for post in get_user_aggregate_posts(user_id) if not is_post_excluded(post)
-    ]
+    posts = get_user_aggregate_posts(user_id)
     with_transcripts = post_ids_with_transcripts(
         [post.id for post in posts if transcript_ready(post)]
     )
@@ -1068,28 +1074,17 @@ def get_user_aggregate_posts(user_id: int, limit_per_feed: int = 3) -> list[Post
 
     all_posts = []
     for feed_id in feed_ids:
-        # Fetch last N processed posts for this feed, skipping excluded titles
-        # before the limit so a feed still contributes N episodes.
-        feed = db.session.get(Feed, feed_id)
-        query = Post.query.filter(
-            Post.feed_id == feed_id,
-            Post.whitelisted.is_(True),
-            Post.processed_audio_path.isnot(None),
-        ).order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-        if feed is not None and getattr(feed, "episode_title_exclude_strings", None):
-            posts = []
-            page_size = max(limit_per_feed * 10, 20)
-            offset = 0
-            # Page until N eligible posts are found or the feed is exhausted.
-            while len(posts) < limit_per_feed:
-                page = query.offset(offset).limit(page_size).all()
-                if not page:
-                    break
-                posts.extend(p for p in page if not is_title_excluded(feed, p.title))
-                offset += page_size
-            posts = posts[:limit_per_feed]
-        else:
-            posts = query.limit(limit_per_feed).all()
+        # Fetch last N processed posts for this feed
+        posts = (
+            Post.query.filter(
+                Post.feed_id == feed_id,
+                Post.whitelisted.is_(True),
+                Post.processed_audio_path.isnot(None),
+            )
+            .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
+            .limit(limit_per_feed)
+            .all()
+        )
         all_posts.extend(posts)
 
     # Sort all posts by release date descending

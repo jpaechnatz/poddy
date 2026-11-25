@@ -1,40 +1,21 @@
-"""Per-feed episode exclusion by title (e.g. Retrokompott "Stammtisch")."""
+"""Fork-specific parts of the per-feed title filter.
+
+Matching, auto-whitelisting, the RSS feed and the settings route are covered
+by upstream's test_episode_filters.py. These tests cover what Poddy adds:
+saving a filter un-whitelists matching unprocessed episodes and bumps the feed
+timestamp, and processed (whitelisted) episodes stay in the aggregate feed.
+"""
 
 import datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from app.episode_filter import is_post_excluded, is_title_excluded
 from app.extensions import db
-from app.feeds import _should_whitelist_new_post, generate_feed_xml
+from app.feeds import get_user_aggregate_posts
 from app.models import Feed, Post
 from app.routes.feed_routes import feed_bp
-from app.runtime_config import config as runtime_config
-from app.writer.actions.feeds import (
-    unwhitelist_excluded_posts_action,
-    whitelist_latest_post_for_feed_action,
-)
-
-
-def test_title_match_is_case_insensitive_substring() -> None:
-    feed = SimpleNamespace(episode_title_exclude_strings="stammtisch, Preview ")
-
-    assert is_title_excluded(feed, "RETROKOMPOTT Stammtisch 404")
-    assert is_title_excluded(feed, "Folge 12 (preview)")
-    assert not is_title_excluded(feed, "Retrokompott 284 Raptor")
-    assert not is_title_excluded(SimpleNamespace(), "Stammtisch")
-    assert not is_title_excluded(None, "Stammtisch")
-    assert is_post_excluded(SimpleNamespace(feed=feed, title="Stammtisch 1"))
-
-
-def test_excluded_new_post_is_not_whitelisted() -> None:
-    feed = Feed(title="RK", rss_url="u", episode_title_exclude_strings="Stammtisch")
-    post = Post(title="Retrokompott Stammtisch 404")
-
-    with mock.patch("app.feeds._should_auto_whitelist_new_posts", return_value=True):
-        assert _should_whitelist_new_post(feed, post, None) is False
-        assert _should_whitelist_new_post(feed, Post(title="284 Raptor"), None)
+from app.writer.actions.feeds import unwhitelist_excluded_posts_action
 
 
 def _add_posts(feed: Feed) -> tuple[Post, Post]:
@@ -57,53 +38,6 @@ def _add_posts(feed: Feed) -> tuple[Post, Post]:
     db.session.add_all([main, stammtisch])
     db.session.commit()
     return main, stammtisch
-
-
-@mock.patch("app.feeds.feed_item")
-@mock.patch("app.feeds.PyRSS2Gen.Image")
-@mock.patch("app.feeds.PyRSS2Gen.RSS2")
-def test_feed_xml_leaves_out_excluded_episodes(
-    mock_rss_2: Any, mock_image: Any, mock_feed_item: Any, app: Any
-) -> None:
-    del mock_image
-    with app.app_context():
-        original_flag = getattr(runtime_config, "autoprocess_on_download", False)
-        runtime_config.autoprocess_on_download = True
-        try:
-            feed = Feed(
-                rss_url="http://example.com/rk",
-                title="RK",
-                episode_title_exclude_strings="stammtisch",
-            )
-            db.session.add(feed)
-            db.session.commit()
-            main, _ = _add_posts(feed)
-            mock_rss_2.return_value.to_xml.return_value = "<rss></rss>"
-
-            generate_feed_xml(feed)
-
-            called = [call.args[0] for call in mock_feed_item.call_args_list]
-            assert called == [main]
-        finally:
-            runtime_config.autoprocess_on_download = original_flag
-
-
-def test_first_member_whitelist_skips_excluded_latest_episode(app: Any) -> None:
-    with app.app_context():
-        feed = Feed(
-            rss_url="http://example.com/rk2",
-            title="RK",
-            episode_title_exclude_strings="Stammtisch",
-        )
-        db.session.add(feed)
-        db.session.commit()
-        main, stammtisch = _add_posts(feed)
-
-        result = whitelist_latest_post_for_feed_action({"feed_id": feed.id})
-
-        assert result == {"updated": True, "post_guid": "main"}
-        assert main.whitelisted is True
-        assert stammtisch.whitelisted is False
 
 
 def _settings_client(app: Any) -> tuple[Any, int]:
@@ -149,17 +83,6 @@ def test_settings_store_and_clear_exclude_strings(app: Any) -> None:
     assert all("last_changed_at" in u for u in seen)
 
 
-def test_settings_reject_non_string_exclude_strings(app: Any) -> None:
-    client, feed_id = _settings_client(app)
-
-    response = client.patch(
-        f"/api/feeds/{feed_id}/settings",
-        json={"episode_title_exclude_strings": ["Stammtisch"]},
-    )
-
-    assert response.status_code == 400
-
-
 def test_saving_filter_unwhitelists_only_unprocessed_matches(app: Any) -> None:
     with app.app_context():
         feed = Feed(
@@ -191,9 +114,9 @@ def test_saving_filter_unwhitelists_only_unprocessed_matches(app: Any) -> None:
         assert done.whitelisted is True  # already processed: left alone
 
 
-def test_aggregate_feed_fills_up_past_excluded_episodes(app: Any) -> None:
-    from app.feeds import get_user_aggregate_posts
-
+def test_aggregate_feed_keeps_processed_episodes_despite_title_filter(app: Any) -> None:
+    # A processed episode was whitelisted (by hand or before the filter was
+    # set); like the feed itself, the aggregate feed then keeps it.
     with app.app_context():
         feed = Feed(
             rss_url="http://example.com/rk4",
@@ -206,7 +129,7 @@ def test_aggregate_feed_fills_up_past_excluded_episodes(app: Any) -> None:
             db.session.add(
                 Post(
                     feed_id=feed.id,
-                    title=("Stammtisch " if i < 3 else "Folge ") + str(i),
+                    title=("Stammtisch " if i < 2 else "Folge ") + str(i),
                     guid=f"agg-{i}",
                     download_url=f"http://example.com/agg-{i}.mp3",
                     whitelisted=True,
@@ -220,35 +143,4 @@ def test_aggregate_feed_fills_up_past_excluded_episodes(app: Any) -> None:
 
         posts = get_user_aggregate_posts(0, limit_per_feed=3)
 
-    assert [p.guid for p in posts] == ["agg-3", "agg-4"]
-
-
-def test_aggregate_feed_scans_past_many_excluded_episodes(app: Any) -> None:
-    from app.feeds import get_user_aggregate_posts
-
-    with app.app_context():
-        feed = Feed(
-            rss_url="http://example.com/rk5",
-            title="RK",
-            episode_title_exclude_strings="Stammtisch",
-        )
-        db.session.add(feed)
-        db.session.commit()
-        base = datetime.datetime(2026, 10, 1, tzinfo=datetime.UTC)
-        for i in range(70):
-            db.session.add(
-                Post(
-                    feed_id=feed.id,
-                    title=("Stammtisch " if i < 65 else "Folge ") + str(i),
-                    guid=f"scan-{i}",
-                    download_url=f"http://example.com/scan-{i}.mp3",
-                    whitelisted=True,
-                    processed_audio_path=f"/tmp/scan-{i}.mp3",
-                    release_date=base - datetime.timedelta(days=i),
-                )
-            )
-        db.session.commit()
-
-        posts = get_user_aggregate_posts(0, limit_per_feed=3)
-
-    assert [p.guid for p in posts] == ["scan-65", "scan-66", "scan-67"]
+    assert [p.guid for p in posts] == ["agg-0", "agg-1", "agg-2"]
