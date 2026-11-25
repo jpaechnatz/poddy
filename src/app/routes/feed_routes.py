@@ -448,8 +448,9 @@ def _aware_utc(value: datetime.datetime | None) -> datetime.datetime | None:
 
 # Bump when the rendered feed XML changes shape for unchanged data (e.g. a new
 # tag such as the SRT podcast:transcript), so cached clients refetch instead
-# of keeping a 304'd copy until the next episode.
-FEED_RENDER_VERSION = "5"
+# of keeping a 304'd copy until the next episode. 6: hand-whitelisted
+# episodes matching the title filter are included again (upstream 2.11.0).
+FEED_RENDER_VERSION = "6"
 
 
 def _posts_render_fingerprint(feed_ids: list[int]) -> str:
