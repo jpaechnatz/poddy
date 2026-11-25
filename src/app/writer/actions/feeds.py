@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy import func
 
-from app.episode_filter import is_title_excluded
+from app.episode_filters import is_title_excluded
 from app.extensions import db
 from app.jobs_manager_run_service import recalculate_run_counts
 from app.models import (
@@ -230,6 +230,10 @@ def remove_user_feed_membership_action(params: dict[str, Any]) -> dict[str, Any]
     return {"removed": int(removed)}
 
 
+# How many recent episodes to scan for one whose title is not excluded.
+_LATEST_POST_SCAN_LIMIT = 50
+
+
 def whitelist_latest_post_for_feed_action(params: dict[str, Any]) -> dict[str, Any]:
     feed_id = params.get("feed_id")
     if not feed_id:
@@ -239,11 +243,16 @@ def whitelist_latest_post_for_feed_action(params: dict[str, Any]) -> dict[str, A
     candidates = (
         Post.query.filter_by(feed_id=int(feed_id))
         .order_by(Post.release_date.desc().nullslast(), Post.id.desc())
-        .limit(50)
-        .all()
+        .limit(_LATEST_POST_SCAN_LIMIT)
     )
-    # Skip episodes the feed's title filter excludes (e.g. "Stammtisch").
-    latest = next((p for p in candidates if not is_title_excluded(feed, p.title)), None)
+    latest = next(
+        (
+            post
+            for post in candidates
+            if feed is None or not is_title_excluded(feed, post.title)
+        ),
+        None,
+    )
     if not latest:
         return {"updated": False}
     if latest.whitelisted:

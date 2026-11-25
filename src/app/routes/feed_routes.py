@@ -31,6 +31,7 @@ from werkzeug.http import http_date
 from app.auth import is_auth_enabled
 from app.auth.guards import require_admin
 from app.auth.service import update_user_last_active
+from app.episode_filters import normalize_title_exclude_strings
 from app.extensions import db
 from app.feeds import (
     _get_base_url,
@@ -144,8 +145,9 @@ def _collect_optional_settings(
     if error_response is not None:
         return error_response
     if exclude_strings is not _MISSING:
-        cleaned = exclude_strings.strip() if isinstance(exclude_strings, str) else ""
-        updates["episode_title_exclude_strings"] = cleaned or None
+        updates["episode_title_exclude_strings"] = normalize_title_exclude_strings(
+            exclude_strings if isinstance(exclude_strings, str) else None
+        )
         # The rendered feed changes, so readers must not get a stale 304.
         updates["last_changed_at"] = datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
@@ -1250,6 +1252,9 @@ def _serialize_feed(
         "auto_whitelist_new_episodes_override": getattr(
             feed, "auto_whitelist_new_episodes_override", None
         ),
+        "episode_title_exclude_strings": getattr(
+            feed, "episode_title_exclude_strings", None
+        ),
         "language": feed.language,
         "posts_count": len(cast(list[Any], feed.posts)),
         "latest_episode_release_date": _latest_episode_release_date(feed),
@@ -1258,9 +1263,6 @@ def _serialize_feed(
         "is_active_subscription": is_active_subscription,
         "ad_detection_strategy": getattr(feed, "ad_detection_strategy", "llm"),
         "chapter_filter_strings": getattr(feed, "chapter_filter_strings", None),
-        "episode_title_exclude_strings": getattr(
-            feed, "episode_title_exclude_strings", None
-        ),
         "trim_silence": bool(getattr(feed, "trim_silence", False)),
         "normalize_loudness": bool(getattr(feed, "normalize_loudness", False)),
         "always_transcribe": bool(getattr(feed, "always_transcribe", False)),
