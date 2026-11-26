@@ -20,11 +20,68 @@ class AudioCutResult(NamedTuple):
 # the refined timestamp to replace it.
 REFINED_EDGE_TOLERANCE_SECONDS = 1.0
 
-# A cut may start this much earlier when nothing was transcribed right before
-# the ad: a short spoken "Werbung" over a jingle is often dropped by the
-# transcription, so no rule could otherwise see it. Never reaches back into
-# transcribed speech.
+# Untranscribed audio right before or after a cut goes with it when the gap is
+# at most this long. The transcription often drops a whole spot over a music
+# bed, or a jingle, so the LLM never sees it (e.g. a heise ad break: about 25 s
+# without text before and after the transcribed spot). Typical spots run
+# 15-30 s; longer gaps are more likely the show's own music. A cut never
+# reaches into transcribed speech.
+ADJACENT_GAP_MAX_SECONDS = 35.0
+
+# Before a longer gap, a cut still starts this much earlier: a short spoken
+# "Werbung" over a jingle is often dropped by the transcription as well.
 PRE_AD_GAP_EXTENSION_SECONDS = 4.0
+
+# Tolerance when comparing a cut edge with transcript segment times.
+_GAP_EPSILON_SECONDS = 0.05
+
+
+def widen_cut_into_untranscribed_gaps(
+    start: float, end: float, spans: list[tuple[float, float]]
+) -> tuple[float, float]:
+    """Return (start, end) of a cut widened into the untranscribed audio around it.
+
+    ``spans`` are the (start, end) times of all transcript segments of the
+    episode, in seconds.
+    """
+    previous_end = max(
+        (
+            seg_end
+            for seg_start, seg_end in spans
+            if seg_start < start - _GAP_EPSILON_SECONDS
+        ),
+        default=0.0,
+    )
+    gap_before = start - previous_end
+    if gap_before > 0:
+        if gap_before <= ADJACENT_GAP_MAX_SECONDS:
+            start = previous_end
+        else:
+            start -= PRE_AD_GAP_EXTENSION_SECONDS
+
+    # Speech that runs on past the cut (e.g. a refined end inside a segment)
+    # means there is no gap after it.
+    speech_end = max(
+        (
+            seg_end
+            for seg_start, seg_end in spans
+            if seg_start < end - _GAP_EPSILON_SECONDS
+        ),
+        default=end,
+    )
+    next_start = min(
+        (
+            seg_start
+            for seg_start, _ in spans
+            if seg_start >= end - _GAP_EPSILON_SECONDS
+        ),
+        default=None,
+    )
+    if speech_end <= end + _GAP_EPSILON_SECONDS and next_start is not None:
+        gap_after = next_start - end
+        if 0 < gap_after <= ADJACENT_GAP_MAX_SECONDS:
+            end = next_start
+    return start, end
 
 
 class AudioProcessor:
@@ -128,7 +185,7 @@ class AudioProcessor:
         if getattr(self.config, "enable_boundary_refinement", False):
             self._apply_refined_boundaries(post, ad_groups)
 
-        self._extend_into_preceding_gap(post, ad_groups)
+        self._extend_into_untranscribed_gaps(post, ad_groups)
 
         self.logger.info(
             f"Merged {len(ad_segments_with_text)} segments into {len(ad_groups)} groups for post {post.id}"
@@ -166,30 +223,31 @@ class AudioProcessor:
                 group.start_time = new_start
                 group.end_time = new_end
 
-    def _extend_into_preceding_gap(self, post: Post, ad_groups: Any) -> None:
-        """Start each cut earlier into untranscribed audio right before it."""
+    def _extend_into_untranscribed_gaps(self, post: Post, ad_groups: Any) -> None:
+        """Widen each cut into untranscribed audio right before and after it."""
+        spans = [
+            (float(seg_start), float(seg_end))
+            for seg_start, seg_end in self.db_session.query(
+                TranscriptSegment.start_time, TranscriptSegment.end_time
+            )
+            .filter(TranscriptSegment.post_id == post.id)
+            .all()
+        ]
         for group in ad_groups:
-            start = float(group.start_time)
-            previous_end = (
-                self.db_session.query(db.func.max(TranscriptSegment.end_time))
-                .filter(
-                    TranscriptSegment.post_id == post.id,
-                    TranscriptSegment.start_time < start - 0.05,
-                )
-                .scalar()
-            )
-            new_start = max(
-                start - PRE_AD_GAP_EXTENSION_SECONDS, float(previous_end or 0.0)
-            )
-            if new_start < start:
+            start, end = float(group.start_time), float(group.end_time)
+            new_start, new_end = widen_cut_into_untranscribed_gaps(start, end, spans)
+            if (new_start, new_end) != (start, end):
                 self.logger.info(
-                    "Ad cut for post %s starts at %.1fs instead of %.1fs "
-                    "(untranscribed audio before the ad)",
+                    "Ad cut for post %s widened from %.1f-%.1fs to %.1f-%.1fs "
+                    "(untranscribed audio next to the ad)",
                     post.id,
-                    new_start,
                     start,
+                    end,
+                    new_start,
+                    new_end,
                 )
                 group.start_time = new_start
+                group.end_time = new_end
 
     def _safe_get_post_row(self, post: Post) -> Post | None:
         try:

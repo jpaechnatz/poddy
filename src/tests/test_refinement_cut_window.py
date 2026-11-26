@@ -9,7 +9,12 @@ from unittest import mock
 from app.models import ModelCall, Post, TranscriptSegment
 from podcast_processor import ad_classifier
 from podcast_processor.ad_classifier import AdClassifier
-from podcast_processor.audio_processor import AudioProcessor
+from podcast_processor.audio_processor import (
+    AudioProcessor,
+)
+from podcast_processor.audio_processor import (
+    widen_cut_into_untranscribed_gaps as widen,
+)
 
 _window = AudioProcessor._refined_overlap_window_for_group
 
@@ -93,36 +98,67 @@ def test_refinement_keeps_each_segment_confidence() -> None:
     assert captured["delete_ids"] == [10, 20, 30]
 
 
-def _gap_processor(previous_end: float | None) -> AudioProcessor:
+def test_cut_starts_earlier_into_short_untranscribed_gap() -> None:
+    # Speech ends at 1349.7, the spot starts at 1352.6: the 2.9 s gap held
+    # the spoken "Werbung" that the transcription dropped.
+    spans = [(1340.0, 1349.7), (1352.6, 1378.9), (1380.0, 1390.0)]
+    assert widen(1352.6, 1378.9, spans) == (1349.7, 1380.0)
+
+
+def test_heise_ad_break_with_untranscribed_spots_is_cut_whole() -> None:
+    # KI-Update 2026-11-25: speech ends 11:33, a spot without any transcript
+    # follows, the transcribed SAP spot runs 11:59-12:34, then 28 s without
+    # text (another spot) before the news resumes at 13:02.
+    spans = [(689.0, 693.0), (719.0, 726.0), (752.0, 754.0), (782.0, 790.0)]
+    assert widen(716.0, 754.0, spans) == (693.0, 782.0)
+
+
+def test_long_gap_before_only_loses_the_announcement_margin() -> None:
+    # 50 s without text is more likely the show's own music.
+    spans = [(500.0, 550.0), (600.0, 630.0), (631.0, 640.0)]
+    assert widen(600.0, 630.0, spans) == (596.0, 631.0)
+
+
+def test_long_gap_after_is_left_alone() -> None:
+    spans = [(590.0, 599.0), (600.0, 630.0), (680.0, 690.0)]
+    assert widen(600.0, 630.0, spans) == (599.0, 630.0)
+
+
+def test_no_widening_when_speech_runs_up_to_the_ad() -> None:
+    spans = [(50.0, 64.5), (64.0, 78.0), (78.0, 90.0)]
+    assert widen(64.0, 78.0, spans) == (64.0, 78.0)
+
+
+def test_no_widening_after_a_refined_end_inside_speech() -> None:
+    # The refinement ended the cut inside a segment that goes on with content.
+    spans = [(60.0, 64.0), (64.0, 80.0), (95.0, 100.0)]
+    assert widen(64.0, 72.0, spans) == (64.0, 72.0)
+
+
+def test_widening_at_episode_start_stops_at_zero() -> None:
+    assert widen(2.0, 30.0, [(2.0, 30.0), (31.0, 40.0)]) == (0.0, 31.0)
+
+
+def test_cut_at_the_end_keeps_its_end_without_later_speech() -> None:
+    # The end of the episode is handled by merge_ad_segments.
+    assert widen(1430.0, 1469.0, [(1400.0, 1422.0), (1430.0, 1469.0)]) == (
+        1422.0,
+        1469.0,
+    )
+
+
+def test_processor_widens_groups_from_the_episode_transcript() -> None:
     processor = object.__new__(AudioProcessor)
     processor.logger = mock.MagicMock()
     session = mock.MagicMock()
-    session.query.return_value.filter.return_value.scalar.return_value = previous_end
+    session.query.return_value.filter.return_value.all.return_value = [
+        (689.0, 693.0),
+        (719.0, 754.0),
+        (782.0, 790.0),
+    ]
     processor.db_session = session
-    return processor
+    group = _group(716.0, 754.0)
 
+    processor._extend_into_untranscribed_gaps(Post(id=1), [group])
 
-def test_cut_starts_earlier_into_untranscribed_gap() -> None:
-    # Speech ends at 1349.7, the spot starts at 1352.6: the 2.9 s gap held
-    # the spoken "Werbung" that the transcription dropped.
-    group = _group(1352.6, 1378.9)
-    _gap_processor(1349.7)._extend_into_preceding_gap(Post(id=1), [group])
-    assert group.start_time == 1349.7
-
-
-def test_gap_extension_is_capped() -> None:
-    group = _group(2609.6, 2634.5)
-    _gap_processor(2604.4)._extend_into_preceding_gap(Post(id=1), [group])
-    assert group.start_time == 2605.6
-
-
-def test_no_extension_when_speech_runs_up_to_the_ad() -> None:
-    group = _group(64.0, 78.0)
-    _gap_processor(64.5)._extend_into_preceding_gap(Post(id=1), [group])
-    assert group.start_time == 64.0
-
-
-def test_extension_at_episode_start_stops_at_zero() -> None:
-    group = _group(2.0, 30.0)
-    _gap_processor(None)._extend_into_preceding_gap(Post(id=1), [group])
-    assert group.start_time == 0.0
+    assert (group.start_time, group.end_time) == (693.0, 782.0)
