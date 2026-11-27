@@ -282,29 +282,18 @@ Vor dem Teilen von Logs API-Keys und Passwörter schwärzen.
 
 ## Log begrenzen
 
-`src/instance/logs/app.log` wächst sonst unbegrenzt. logrotate auf dem Host
-kürzt es wöchentlich oder ab 50 MB und behält vier ältere Stände komprimiert.
-`copytruncate` ist nötig, weil Writer und Web-App die Datei offen halten.
+Poddy rotiert `src/instance/logs/app.log` selbst: Ab 10 MB beginnt eine neue
+Datei, fünf ältere (`app.log.1` bis `app.log.5`) bleiben erhalten, zusammen
+also höchstens etwa 60 MB. Beide Werte stehen in der Weboberfläche unter
+Config → Advanced → General, Abschnitt Logs; 0 MB schaltet die Rotation aus.
+
+Wer vor Version 2.12 logrotate dafür eingerichtet hat, entfernt es wieder,
+sonst rotieren beide dieselbe Datei und kommen sich bei `app.log.1` in die
+Quere:
 
 ```bash
-sudo tee /etc/logrotate.d/poddy >/dev/null <<EOF
-$HOME/poddy/src/instance/logs/*.log {
-    su $(id -un) $(id -gn)
-    weekly
-    maxsize 50M
-    rotate 4
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-}
-EOF
-sudo logrotate -d /etc/logrotate.d/poddy 2>&1 | tail -5
+sudo rm -f /etc/logrotate.d/poddy
 ```
-
-Der letzte Befehl ist ein Probelauf ohne Änderung. Ältere Einträge stehen danach
-in `app.log.1` bzw. `app.log.2.gz` usw.
 
 ## Updates und Backup
 
